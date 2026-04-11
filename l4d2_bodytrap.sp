@@ -573,4 +573,429 @@ void ExecuteMolotovEffect(float pos[3], int target, int owner)
     int propane = CreateEntityByName("prop_physics");
     if (propane > MaxClients && IsValidEntity(propane))
     {
-        float pPos[3]; pPos = pos; pPos[2] +
+        float pPos[3]; pPos = pos; pPos[2] += 10.0;
+        DispatchKeyValue(propane, "model", "models/props_junk/propanecanister001a.mdl");
+        DispatchSpawn(propane);
+        SetEntData(propane, GetEntSendPropOffs(propane, "m_CollisionGroup"), 1, 1, true); 
+        TeleportEntity(propane, pPos, NULL_VECTOR, NULL_VECTOR);
+        AcceptEntityInput(propane, "break");
+    }
+
+    float offsets[3][2] = { {20.0, 0.0}, {-10.0, 17.32}, {-10.0, -17.32} };
+    for (int i = 0; i < 3; i++)
+    {
+        int gascan = CreateEntityByName("prop_physics");
+        if (gascan > MaxClients && IsValidEntity(gascan))
+        {
+            float gPos[3];
+            gPos[0] = pos[0] + offsets[i][0];
+            gPos[1] = pos[1] + offsets[i][1];
+            gPos[2] = pos[2] + 15.0; 
+            
+            DispatchKeyValue(gascan, "model", "models/props_junk/gascan001a.mdl");
+            DispatchSpawn(gascan);
+            SetEntData(gascan, GetEntSendPropOffs(gascan, "m_CollisionGroup"), 1, 1, true); 
+            TeleportEntity(gascan, gPos, NULL_VECTOR, NULL_VECTOR);
+            AcceptEntityInput(gascan, "break");
+        }
+    }
+    TagTrapInflictor(pos, TYPE_MOLOTOV); 
+
+    float igniteTime = g_cvMolotovIgniteTime.FloatValue;
+    if (igniteTime > 0.0 && target > 0 && IsValidEntity(target))
+    {
+        int bodyFire = AttachFireToBody(target);
+        
+        DataPack pack;
+        CreateDataTimer(0.5, Timer_FireTrail, pack, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+        pack.WriteCell(EntIndexToEntRef(target));
+        pack.WriteCell(GetClientUserId(owner));
+        pack.WriteFloat(igniteTime);
+        pack.WriteCell(EntIndexToEntRef(bodyFire)); 
+    }
+}
+
+public Action Timer_FireTrail(Handle timer, DataPack pack)
+{
+    pack.Reset();
+    int targetRef = pack.ReadCell();
+    int ownerUserId = pack.ReadCell();
+    float remainingTime = pack.ReadFloat() - 0.5;
+    int bodyFireRef = pack.ReadCell();
+
+    int target = EntRefToEntIndex(targetRef);
+    int bodyFire = EntRefToEntIndex(bodyFireRef);
+
+    if (target == INVALID_ENT_REFERENCE || remainingTime <= 0.0 || !IsValidEntity(target) || (target <= MaxClients && !IsPlayerAlive(target)))
+    {
+        if (bodyFire != INVALID_ENT_REFERENCE) AcceptEntityInput(bodyFire, "Kill");
+        if (target != INVALID_ENT_REFERENCE && IsValidEntity(target)) ExtinguishEntity(target);
+        return Plugin_Stop;
+    }
+    
+    if (GetEntityFlags(target) & FL_INWATER)
+    {
+        if (bodyFire != INVALID_ENT_REFERENCE) AcceptEntityInput(bodyFire, "Kill");
+        ExtinguishEntity(target);
+        return Plugin_Stop;
+    }
+
+    if (bodyFire == INVALID_ENT_REFERENCE)
+    {
+        bodyFire = AttachFireToBody(target);
+        bodyFireRef = EntIndexToEntRef(bodyFire);
+    }
+
+    IgniteEntity(target, 1.0);
+
+    pack.Reset();
+    pack.WriteCell(targetRef);
+    pack.WriteCell(ownerUserId);
+    pack.WriteFloat(remainingTime);
+    pack.WriteCell(bodyFireRef);
+
+    float pos[3];
+    GetEntPropVector(target, Prop_Send, "m_vecOrigin", pos);
+
+    int owner = GetClientOfUserId(ownerUserId);
+    if (owner == 0 || !IsClientInGame(owner)) owner = 0;
+
+    float bodyDamage = g_cvMolotovBodyDamage.FloatValue;
+    if (bodyDamage > 0.0) SDKHooks_TakeDamage(target, owner, owner, bodyDamage, DMG_BURN);
+
+    int groundFire = CreateEntityByName("env_fire");
+    if (groundFire != -1)
+    {
+        char sDuration[16], sTrailDamage[16];
+        FloatToString(g_cvMolotovTrailDuration.FloatValue, sDuration, sizeof(sDuration));
+        FloatToString(g_cvMolotovTrailDamage.FloatValue * 2.0, sTrailDamage, sizeof(sTrailDamage)); 
+        
+        DispatchKeyValue(groundFire, "health", sDuration);  
+        DispatchKeyValue(groundFire, "firesize", "60");     
+        DispatchKeyValue(groundFire, "fireattack", sTrailDamage); 
+        DispatchSpawn(groundFire);
+        
+        TeleportEntity(groundFire, pos, NULL_VECTOR, NULL_VECTOR);
+        AcceptEntityInput(groundFire, "StartFire");
+        
+        g_bIsTrapInflictor[groundFire] = true;
+        g_TrapInflictorType[groundFire] = TYPE_MOLOTOV;
+        
+        float duration = g_cvMolotovTrailDuration.FloatValue;
+        if (duration > 0.0) CreateTimer(duration, Timer_KillEntity, EntIndexToEntRef(groundFire));
+    }
+
+    float aoeRadius = 100.0;
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (i != target && IsClientInGame(i) && IsPlayerAlive(i))
+        {
+            float clientPos[3];
+            GetClientAbsOrigin(i, clientPos);
+            if (GetVectorDistance(pos, clientPos) <= aoeRadius)
+            {
+                SDKHooks_TakeDamage(i, owner, owner, bodyDamage, DMG_BURN);
+            }
+        }
+    }
+
+    int ent = -1;
+    while ((ent = FindEntityByClassname(ent, "infected")) != -1)
+    {
+        float entPos[3];
+        GetEntPropVector(ent, Prop_Send, "m_vecOrigin", entPos);
+        if (GetVectorDistance(pos, entPos) <= aoeRadius)
+        {
+            SDKHooks_TakeDamage(ent, owner, owner, bodyDamage, DMG_BURN);
+            IgniteEntity(ent, 3.0); 
+        }
+    }
+    
+    ent = -1;
+    while ((ent = FindEntityByClassname(ent, "witch")) != -1)
+    {
+        float entPos[3];
+        GetEntPropVector(ent, Prop_Send, "m_vecOrigin", entPos);
+        if (GetVectorDistance(pos, entPos) <= aoeRadius)
+        {
+            SDKHooks_TakeDamage(ent, owner, owner, bodyDamage, DMG_BURN);
+            IgniteEntity(ent, 3.0);
+        }
+    }
+
+    return Plugin_Continue;
+}
+
+public bool TraceFilter_IgnorePlayers(int entity, int contentsMask)
+{
+    if (entity <= MaxClients) return false;
+    char classname[64];
+    GetEdictClassname(entity, classname, sizeof(classname));
+    if (StrEqual(classname, "infected") || StrEqual(classname, "witch")) return false;
+    return true; 
+}
+
+bool GetGroundPosition(float pos[3], float groundPos[3])
+{
+    float start[3], end[3];
+    start = pos;
+    end = pos;
+    start[2] += 100.0;
+    end[2] -= 100.0;
+    
+    Handle trace = TR_TraceRayFilterEx(start, end, MASK_SOLID, RayType_EndPoint, TraceFilter_IgnorePlayers);
+    bool hit = TR_DidHit(trace);
+    if (hit)
+    {
+        TR_GetEndPosition(groundPos, trace);
+        groundPos[2] += 5.0;
+    }
+    else groundPos = pos;
+    
+    CloseHandle(trace);
+    return hit;
+}
+
+void ExecuteVomitjarEffect(float pos[3], int owner)
+{
+    int attacker = owner;
+    if (attacker <= 0 || !IsClientInGame(attacker))
+    {
+        attacker = 0;
+        for (int i = 1; i <= MaxClients; i++) 
+            if (IsClientInGame(i)) { attacker = i; break; }
+    }
+    
+    float vEnd[3];
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && GetClientTeam(i) == 2 && IsPlayerAlive(i))
+        {
+            GetClientAbsOrigin(i, vEnd);
+            if (GetVectorDistance(pos, vEnd) <= g_cvVomitRadius.FloatValue)
+            {
+                if (g_hVomitOnPlayer != null && attacker > 0)
+                {
+                    SDKCall(g_hVomitOnPlayer, i, attacker, true);
+                    ApplyKnockback(i, pos); // Gọi Knockback thay cho L4D_StaggerPlayer
+                }
+            }
+        }
+    }
+    
+    int puke = CreateEntityByName("vomitjar_projectile");
+    if (puke != -1)
+    {
+        DispatchSpawn(puke);
+        TeleportEntity(puke, pos, NULL_VECTOR, NULL_VECTOR);
+        AcceptEntityInput(puke, "Break"); 
+    }
+    EmitSoundToAll("player/boomer/explode/exp_boomer.wav", SOUND_FROM_WORLD, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 1.0, SNDPITCH_NORMAL, -1, pos);
+    
+    float groundPos[3];
+    GetGroundPosition(pos, groundPos);
+    
+    float offsets[3][2] = { {30.0, 0.0}, {-15.0, 25.98}, {-15.0, -25.98} };
+    float scale = g_cvVomitAcidScale.FloatValue;
+    int repeat = RoundToNearest(scale);
+    if (repeat < 1) repeat = 1;
+    if (repeat > 5) repeat = 5;
+
+    for (int r = 0; r < repeat; r++)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            float checkPos[3];
+            checkPos[0] = groundPos[0] + offsets[i][0];
+            checkPos[1] = groundPos[1] + offsets[i][1];
+            checkPos[2] = groundPos[2] + 15.0; 
+            
+            if (scale > 1.5 && r > 0) 
+            {
+                float angle = float(r) * (360.0 / repeat);
+                checkPos[0] += Cosine(DegToRad(angle)) * 20.0;
+                checkPos[1] += Sine(DegToRad(angle)) * 20.0;
+            }
+            
+            Handle trace = TR_TraceRayFilterEx(groundPos, checkPos, MASK_SOLID, RayType_EndPoint, TraceFilter_IgnorePlayers);
+            if (TR_DidHit(trace))
+            {
+                TR_GetEndPosition(checkPos, trace);
+                float dir[3];
+                SubtractVectors(groundPos, checkPos, dir);
+                NormalizeVector(dir, dir);
+                ScaleVector(dir, 15.0); 
+                AddVectors(checkPos, dir, checkPos);
+            }
+            CloseHandle(trace);
+            
+            // L4D2_SpitterPrj đã được xóa bỏ để giải phóng left4dhooks
+            // Việc tạo vũng acid được xử lý thuần túy bằng code dưới đây
+            int spit = CreateEntityByName("spitter_projectile");
+            if (spit > MaxClients && IsValidEntity(spit))
+            {
+                if (owner > 0) SetEntPropEnt(spit, Prop_Send, "m_hOwnerEntity", owner);
+                DispatchSpawn(spit);
+                TeleportEntity(spit, checkPos, NULL_VECTOR, NULL_VECTOR);
+                if (g_hSpitterDetonate != null) SDKCall(g_hSpitterDetonate, spit);
+                else AcceptEntityInput(spit, "Kill"); 
+            }
+
+            int swarm = CreateEntityByName("insect_swarm");
+            if (swarm > MaxClients && IsValidEntity(swarm))
+            {
+                if (owner > 0) SetEntPropEnt(swarm, Prop_Send, "m_hOwnerEntity", owner);
+                DispatchSpawn(swarm);
+                TeleportEntity(swarm, checkPos, NULL_VECTOR, NULL_VECTOR);
+                AcceptEntityInput(swarm, "Start");
+            }
+        }
+    }
+    
+    TagTrapInflictor(pos, TYPE_VOMIT);
+}
+
+void TagTrapInflictor(float pos[3], TrapType type)
+{
+    Handle pack;
+    CreateDataTimer(0.1, Timer_TagInflictor, pack); 
+    WritePackFloat(pack, pos[0]);
+    WritePackFloat(pack, pos[1]);
+    WritePackFloat(pack, pos[2]);
+    WritePackCell(pack, type);
+}
+
+public Action Timer_TagInflictor(Handle timer, Handle pack)
+{
+    ResetPack(pack);
+    float pos[3];
+    pos[0] = ReadPackFloat(pack);
+    pos[1] = ReadPackFloat(pack);
+    pos[2] = ReadPackFloat(pack);
+    TrapType type = view_as<TrapType>(ReadPackCell(pack));
+
+    char classname[32];
+    float radius = 0.0, duration = 0.0;
+
+    if (type == TYPE_MOLOTOV)
+    {
+        strcopy(classname, sizeof(classname), "inferno");
+        radius = 200.0;
+        duration = g_cvMolotovDuration.FloatValue;
+    }
+    else if (type == TYPE_VOMIT)
+    {
+        strcopy(classname, sizeof(classname), "insect_swarm");
+        radius = 350.0; 
+        duration = g_cvVomitDuration.FloatValue;
+    }
+
+    int ent = -1;
+    while ((ent = FindEntityByClassname(ent, classname)) != -1)
+    {
+        if (!g_bIsTrapInflictor[ent]) 
+        {
+            float entPos[3];
+            GetEntPropVector(ent, Prop_Send, "m_vecOrigin", entPos);
+            if (GetVectorDistance(pos, entPos) <= radius)
+            {
+                g_bIsTrapInflictor[ent] = true;
+                g_TrapInflictorType[ent] = type;
+                if (duration > 0.0) CreateTimer(duration, Timer_KillEntity, EntIndexToEntRef(ent));
+            }
+        }
+    }
+    return Plugin_Stop;
+}
+
+public Action Hook_OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype)
+{
+    if (inflictor > 0 && inflictor < MAX_EDICTS && g_bIsTrapInflictor[inflictor])
+    {
+        if (g_TrapInflictorType[inflictor] == TYPE_MOLOTOV)
+        {
+            char classname[64];
+            GetEdictClassname(inflictor, classname, sizeof(classname));
+            
+            if (StrEqual(classname, "env_fire"))
+            {
+                float customDmg = g_cvMolotovTrailDamage.FloatValue;
+                if (customDmg > 0.0)
+                {
+                    damage = customDmg;
+                    return Plugin_Changed;
+                }
+            }
+            else
+            {
+                float customDmg = g_cvMolotovBodyDamage.FloatValue; 
+                if (customDmg > 0.0)
+                {
+                    damage = customDmg;
+                    return Plugin_Changed;
+                }
+            }
+        }
+        else if (g_TrapInflictorType[inflictor] == TYPE_VOMIT)
+        {
+            float customDmg = g_cvVomitDamage.FloatValue;
+            if (customDmg > 0.0)
+            {
+                damage = customDmg;
+                return Plugin_Changed;
+            }
+        }
+    }
+    return Plugin_Continue;
+}
+
+bool IsIncapped(int client)
+{
+    return (GetClientTeam(client) == 2 && GetEntProp(client, Prop_Send, "m_isIncapacitated", 1) == 1);
+}
+
+public Action Timer_KillEntity(Handle timer, int ref)
+{
+    int entity = EntRefToEntIndex(ref);
+    if (entity != INVALID_ENT_REFERENCE) AcceptEntityInput(entity, "Kill");
+    return Plugin_Stop;
+}
+
+public Action OnWeaponSwitch(int client, int weapon)
+{
+    g_IsHolding[client] = false;
+    return Plugin_Continue;
+}
+
+void RemoveTrap(int target)
+{
+    if (target <= 0 || target >= MAX_EDICTS || !g_HasTrap[target]) return;
+    
+    if (g_Traps[target].timer != null) KillTimer(g_Traps[target].timer);
+    if (g_Traps[target].effectTimer != null) KillTimer(g_Traps[target].effectTimer);
+    
+    g_Traps[target].timer = null;
+    g_Traps[target].effectTimer = null;
+    
+    if (target <= MaxClients && IsClientInGame(target)) SetEntProp(target, Prop_Send, "m_iGlowType", 0);
+    else if (IsValidEntity(target)) SetEntityRenderColor(target, 255, 255, 255, 255);
+    
+    g_HasTrap[target] = false;
+}
+
+public void Event_EntityKilled(Event event, const char[] name, bool dontBroadcast)
+{
+    int entity = event.GetInt("entindex_killed");
+    if (entity > 0 && entity < MAX_EDICTS && g_HasTrap[entity]) RemoveTrap(entity);
+}
+
+public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast) { ClearAllTraps(); }
+public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast) { ClearAllTraps(); }
+
+void ClearAllTraps()
+{
+    for (int i = 1; i < MAX_EDICTS; i++)
+    {
+        if (g_HasTrap[i]) RemoveTrap(i);
+    }
+}
