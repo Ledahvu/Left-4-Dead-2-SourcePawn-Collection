@@ -115,4 +115,4 @@ GPLv3 – 请查看 [LICENSE](LICENSE) 文件。
 
 ---
 
-*Maintained by [Your Name] – Happy modding!*
+*Maintained by [Tyn Zũ] – Happy modding!*
