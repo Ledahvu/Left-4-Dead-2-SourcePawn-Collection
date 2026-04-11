@@ -80,7 +80,7 @@ TrapType g_TrapInflictorType[MAX_EDICTS];
 
 public void OnPluginStart()
 {
-    Handle conf = LoadGameConfigFile("bodytrap");
+    Handle conf = LoadGameConfigFile("l4d2_bodytrap");
     if (conf != null)
     {
         StartPrepSDKCall(SDKCall_Player);
