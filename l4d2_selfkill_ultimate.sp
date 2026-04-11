@@ -427,3 +427,426 @@ public Action Timer_PipeCountdown(Handle timer, int client)
 }
 
 public Action Timer_BlinkColor(Handle timer, int client)
+{
+    if (!g_bPipeActive[client] || !IsClientInGame(client)) return Plugin_Stop;
+    static bool red = false;
+    red = !red;
+    SetEntityRenderColor(client, red ? 255 : 255, red ? 0 : 255, red ? 0 : 255, 255);
+    return Plugin_Continue;
+}
+
+// Timer bắn Beam Ring liên tục ra từ người dùng
+public Action Timer_DrawRings(Handle timer, int client)
+{
+    if (!g_bPipeActive[client] || !IsClientInGame(client) || !IsPlayerAlive(client))
+    {
+        g_hRingTimer[client] = null;
+        return Plugin_Stop;
+    }
+
+    if (!g_bRingsEnable) return Plugin_Continue;
+
+    float pos[3];
+    GetClientAbsOrigin(client, pos);
+    pos[2] += 10.0;
+
+    float ratio = float(g_iPipeCountdown[client]) / float(g_iPipeTime);
+    float alpha = g_fRingAlphaMin + (ratio * (g_fRingAlphaMax - g_fRingAlphaMin));
+    if (alpha < 0.0) alpha = 0.0;
+    if (alpha > 255.0) alpha = 255.0;
+
+    if (g_bRingBlinkEnable && ratio < 0.3)
+    {
+        static bool blink = false;
+        blink = !blink;
+        if (blink) alpha *= 0.3;
+    }
+
+    int iAlpha = RoundToNearest(alpha);
+    g_iRingColorClose[3] = iAlpha;
+    g_iRingColorMid[3] = iAlpha;
+    g_iRingColorFar[3] = iAlpha;
+
+    TE_SetupBeamRingPoint(pos, 10.0, g_fRadiusClose, g_iBeamSprite, g_iHaloSprite, 0, 0, 0.8, 4.0, 0.0, g_iRingColorClose, 0, 0);
+    TE_SendToAll();
+
+    TE_SetupBeamRingPoint(pos, 10.0, g_fRadiusMid, g_iBeamSprite, g_iHaloSprite, 0, 0, 0.8, 4.0, 0.0, g_iRingColorMid, 0, 0);
+    TE_SendToAll();
+
+    TE_SetupBeamRingPoint(pos, 10.0, g_fRadiusFar, g_iBeamSprite, g_iHaloSprite, 0, 0, 0.8, 4.0, 0.0, g_iRingColorFar, 0, 0);
+    TE_SendToAll();
+
+    return Plugin_Continue;
+}
+
+void ResetPipeState(int client)
+{
+    if (g_hPipeTimer[client] != null) { KillTimer(g_hPipeTimer[client]); g_hPipeTimer[client] = null; }
+    if (g_hBlinkTimer[client] != null) { KillTimer(g_hBlinkTimer[client]); g_hBlinkTimer[client] = null; }
+    if (g_hRingTimer[client] != null) { KillTimer(g_hRingTimer[client]); g_hRingTimer[client] = null; }
+    if (g_iInstructorHintEntity[client] != 0 && IsValidEntity(g_iInstructorHintEntity[client]))
+    {
+        AcceptEntityInput(g_iInstructorHintEntity[client], "EndHint");
+        RemoveEntity(g_iInstructorHintEntity[client]);
+        g_iInstructorHintEntity[client] = 0;
+    }
+    g_bPipeActive[client] = false;
+    if (IsClientInGame(client))
+    {
+        if (IsPlayerAlive(client)) SetEntPropFloat(client, Prop_Send, "m_flLaggedMovementValue", g_fOriginalSpeed[client]);
+        SetEntityRenderColor(client, 255, 255, 255, 255);
+        DispatchKeyValue(client, "targetname", "");
+    }
+}
+
+// ==================== SELFKILLG ====================
+public Action Command_SelfKillGravity(int client, int args)
+{
+    if (!g_bEnabled || !IsValidAlive(client)) return Plugin_Handled;
+    if (g_bGravityActive[client])
+    {
+        ResetGravityState(client);
+        PrintToChat(client, "[SM] Đã hủy chế độ gravity.");
+        return Plugin_Handled;
+    }
+    g_bGravityActive[client] = true;
+    g_bShiftPressed[client] = false;
+    PrintToChat(client, "[SM] Chế độ Gravity kích hoạt. Giữ phím SHIFT để hút các mục tiêu xung quanh.");
+    return Plugin_Handled;
+}
+
+void StopGravityPull(int client)
+{
+    if (g_hGravityTimer[client] != null)
+    {
+        KillTimer(g_hGravityTimer[client]);
+        g_hGravityTimer[client] = null;
+    }
+}
+
+public Action Timer_GravityPull(Handle timer, int client)
+{
+    if (!g_bGravityActive[client] || !IsValidAlive(client) || !g_bShiftPressed[client])
+    {
+        StopGravityPull(client);
+        return Plugin_Stop;
+    }
+
+    float clientPos[3];
+    GetClientAbsOrigin(client, clientPos);
+    ArrayList targets = new ArrayList();
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientInGame(i) || !IsPlayerAlive(i)) continue;
+        if (i == client) continue;
+        
+        float targetPos[3];
+        GetClientAbsOrigin(i, targetPos);
+        float distance = GetVectorDistance(clientPos, targetPos);
+        
+        if (distance <= g_fGravityRange)
+        {
+            targets.Push(i);
+        }
+    }
+
+    int targetCount = targets.Length;
+    if (g_iMaxTargets > 0 && targetCount > g_iMaxTargets)
+        targetCount = g_iMaxTargets;
+
+    // 1. ĐẾM SỐ LƯỢNG NGƯỜI ĐÃ NẰM TRONG VÙNG NỔ
+    int targetsInExplodeDist = 0;
+    for (int j = 0; j < targetCount; j++)
+    {
+        int target = targets.Get(j);
+        if (!IsValidAlive(target)) continue;
+        
+        float targetPos[3];
+        GetClientAbsOrigin(target, targetPos);
+        float distance = GetVectorDistance(clientPos, targetPos);
+        
+        if (distance <= g_fGravityExplodeDist)
+        {
+            targetsInExplodeDist++;
+        }
+    }
+
+    // 2. NẾU ĐỦ SỐ LƯỢNG THÌ KÍCH HOẠT NỔ SIÊU LỚN
+    if (targetsInExplodeDist >= g_iGravityExplodeThreshold && targetsInExplodeDist > 0)
+    {
+        DoExplosionAtClient(client);
+        ResetGravityState(client);
+        delete targets;
+        return Plugin_Stop;
+    }
+
+    // 3. NẾU CHƯA ĐỦ SỐ LƯỢNG THÌ TIẾP TỤC HÚT/GIỮ CHÂN
+    for (int j = 0; j < targetCount; j++)
+    {
+        int target = targets.Get(j);
+        if (!IsValidAlive(target)) continue;
+
+        float targetPos[3];
+        GetClientAbsOrigin(target, targetPos);
+        float distance = GetVectorDistance(clientPos, targetPos);
+
+        // Nếu người này đã ở rất gần (nhỏ hơn 20 units) thì giữ nguyên vị trí, không hút thêm tránh bị đẩy lùi (glitch)
+        if (distance <= 20.0) continue; 
+
+        float dir[3];
+        MakeVectorFromPoints(targetPos, clientPos, dir);
+        NormalizeVector(dir, dir);
+
+        float force = g_fGravityForce;
+        if (distance > 100.0)
+            force = g_fGravityForce * (1.0 - (distance - 100.0) / g_fGravityRange);
+
+        if (force < 10.0) force = 10.0;
+        float pullDistance = force * g_fGravityInterval;
+        
+        // Không kéo quá sát gây kẹt
+        if (pullDistance > distance - 20.0) pullDistance = distance - 20.0;
+
+        float newPos[3];
+        newPos[0] = targetPos[0] + dir[0] * pullDistance;
+        newPos[1] = targetPos[1] + dir[1] * pullDistance;
+        newPos[2] = targetPos[2] + dir[2] * pullDistance;
+        TeleportEntity(target, newPos, NULL_VECTOR, NULL_VECTOR);
+    }
+    
+    delete targets;
+    return Plugin_Continue;
+}
+
+void ResetGravityState(int client)
+{
+    StopGravityPull(client);
+    g_bGravityActive[client] = false;
+    g_bShiftPressed[client] = false;
+}
+
+// ==================== LOGIC NỔ & SÁT THƯƠNG ====================
+bool IsValidAlive(int client) { return (client > 0 && IsClientInGame(client) && IsPlayerAlive(client)); }
+
+void DoExplosionAtClient(int client)
+{
+    float pos[3];
+    GetClientAbsOrigin(client, pos);
+    
+    // 1. Tạo hiệu ứng nổ siêu lớn bằng cách đập vỡ (Break) 5 bình gas tàng hình NGAY LẬP TỨC
+    for (int k = 0; k < 5; k++) 
+    {
+        int propane = CreateEntityByName("prop_physics");
+        if (propane != -1)
+        {
+            SetEntPropEnt(propane, Prop_Data, "m_hOwnerEntity", client);
+            DispatchKeyValue(propane, "model", "models/props_junk/propanecanister001a.mdl");
+            DispatchSpawn(propane);
+            TeleportEntity(propane, pos, NULL_VECTOR, NULL_VECTOR);
+            ActivateEntity(propane);
+            SetEntityRenderMode(propane, RENDER_TRANSCOLOR);
+            SetEntityRenderColor(propane, 0, 0, 0, 0); // Làm tàng hình bình gas
+            
+            // SỬ DỤNG "Break" ĐỂ NỔ NGAY LẬP TỨC
+            AcceptEntityInput(propane, "Break", client, client);
+        }
+    }
+
+    // Vẫn giữ lại env_explosion cho particle bổ trợ
+    int explosion = CreateEntityByName("env_explosion");
+    if (explosion != -1)
+    {
+        DispatchKeyValue(explosion, "iMagnitude", "0");
+        SetEntProp(explosion, Prop_Data, "m_spawnflags", 1);
+        TeleportEntity(explosion, pos, NULL_VECTOR, NULL_VECTOR);
+        AcceptEntityInput(explosion, "Explode");
+        CreateTimer(0.1, Timer_RemoveEntity, EntIndexToEntRef(explosion));
+    }
+
+    if (strlen(g_sSound) > 0) EmitAmbientSound(g_sSound, pos, client, SNDLEVEL_NORMAL);
+    if (strlen(g_sParticle) > 0)
+    {
+        PrecacheParticle(g_sParticle);
+    }
+
+    float shakeRadius = g_fRadiusFar * g_fShakeRadiusMultiplier;
+
+    // 2. Sát thương cho Người chơi
+    float victimPos[3];
+    float distance;
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsValidAlive(i) || i == client) continue;
+        
+        GetClientAbsOrigin(i, victimPos);
+        distance = GetVectorDistance(pos, victimPos);
+        
+        if (distance <= g_fRadiusFar)
+        {
+            bool bIncap = (GetClientTeam(i) == 2 && GetEntProp(i, Prop_Send, "m_isIncapacitated"));
+            
+            if (distance <= g_fRadiusClose)
+            {
+                if (g_iActionClose == 0) KillPlayer(i, client);
+                else IncapPlayer(i, client);
+                
+                if (g_bShakeEnable) ScreenShake(i, g_fShakeCloseDuration, g_fShakeCloseAmplitude, g_fShakeCloseFrequency);
+            }
+            else if (distance <= g_fRadiusMid)
+            {
+                if (g_iActionMid == 0) IncapPlayer(i, client);
+                else DamagePlayerPercent(i, client, distance);
+                
+                if (g_bShakeEnable) ScreenShake(i, g_fShakeMidDuration, g_fShakeMidAmplitude, g_fShakeMidFrequency);
+                if (!bIncap && g_bStaggerEnable && g_iActionMid == 1) StaggerPlayer(i);
+            }
+            else
+            {
+                DamagePlayerPercent(i, client, distance);
+                if (g_bShakeEnable) ScreenShake(i, g_fShakeFarDuration, g_fShakeFarAmplitude, g_fShakeFarFrequency);
+                if (!bIncap && g_bStaggerEnable) StaggerPlayer(i);
+            }
+        }
+        else if (distance <= shakeRadius)
+        {
+            if (g_bShakeEnable) ScreenShake(i, g_fShakeOuterDuration, g_fShakeOuterAmplitude, g_fShakeOuterFrequency);
+            bool bIncap = (GetClientTeam(i) == 2 && GetEntProp(i, Prop_Send, "m_isIncapacitated"));
+            if (!bIncap && g_bStaggerEnable) StaggerPlayer(i);
+        }
+    }
+
+    // 3. Tiêu diệt CI/SI
+    int entity = -1;
+    while ((entity = FindEntityByClassname(entity, "infected")) != -1)
+    {
+        if (!IsValidEntity(entity)) continue;
+        float zombiePos[3];
+        GetEntPropVector(entity, Prop_Send, "m_vecOrigin", zombiePos);
+        if (GetVectorDistance(pos, zombiePos) <= g_fRadiusFar)
+        {
+            SDKHooks_TakeDamage(entity, client, client, 10000.0, DMG_BLAST | DMG_ALWAYSGIB);
+        }
+    }
+
+    // 4. Giết người sử dụng
+    ForcePlayerSuicide(client);
+    if (g_bShakeEnable) ScreenShake(client, g_fShakeCloseDuration, g_fShakeCloseAmplitude, g_fShakeCloseFrequency);
+}
+
+void KillPlayer(int victim, int attacker)
+{
+    SDKHooks_TakeDamage(victim, attacker, attacker, 99999.0, DMG_BLAST);
+    ForcePlayerSuicide(victim); 
+}
+
+void IncapPlayer(int victim, int attacker)
+{
+    if (GetClientTeam(victim) == 2)
+    {
+        if (!GetEntProp(victim, Prop_Send, "m_isIncapacitated"))
+        {
+            float hp = float(GetClientHealth(victim)) + GetEntPropFloat(victim, Prop_Send, "m_healthBuffer");
+            SDKHooks_TakeDamage(victim, attacker, attacker, hp + 10.0, DMG_CLUB);
+        }
+    }
+    else if (GetClientTeam(victim) == 3) // Xử lý SI/Tank Custom Cvars
+    {
+        int classId = GetEntProp(victim, Prop_Send, "m_zombieClass");
+        bool isTank = (classId == 8);
+        
+        if (g_bSeparateTank && isTank)
+        {
+            switch (g_iTankDamageMode)
+            {
+                case 0: KillPlayer(victim, attacker);
+                case 1: SDKHooks_TakeDamage(victim, attacker, attacker, g_fTankDamageAmount, DMG_CLUB);
+                case 2:
+                {
+                    int currentHealth = GetClientHealth(victim);
+                    int damage = RoundToCeil(currentHealth * (g_fTankDamageAmount / 100.0));
+                    if (damage < 1) damage = 1;
+                    SDKHooks_TakeDamage(victim, attacker, attacker, float(damage), DMG_CLUB);
+                }
+            }
+        }
+        else
+        {
+            switch (g_iSIDamageMode)
+            {
+                case 0: KillPlayer(victim, attacker);
+                case 1: SDKHooks_TakeDamage(victim, attacker, attacker, g_fSIDamageAmount, DMG_CLUB);
+                case 2:
+                {
+                    int currentHealth = GetClientHealth(victim);
+                    int damage = RoundToCeil(currentHealth * (g_fSIDamageAmount / 100.0));
+                    if (damage < 1) damage = 1;
+                    SDKHooks_TakeDamage(victim, attacker, attacker, float(damage), DMG_CLUB);
+                }
+            }
+        }
+    }
+}
+
+void DamagePlayerPercent(int victim, int attacker, float distance)
+{
+    if (!IsValidAlive(victim)) return;
+    float startDist = (g_iActionMid == 1) ? g_fRadiusClose : g_fRadiusMid;
+    float endDist = g_fRadiusFar;
+    
+    if (distance < startDist) distance = startDist;
+    if (distance > endDist) distance = endDist;
+    
+    float fraction = 1.0 - ((distance - startDist) / (endDist - startDist));
+    float finalPercent = g_fPercentMin + (fraction * (g_fPercentMax - g_fPercentMin));
+    
+    float hpMax = float(GetEntProp(victim, Prop_Send, "m_iMaxHealth"));
+    if (hpMax <= 0.0) hpMax = 100.0;
+    
+    float damage = (hpMax * finalPercent) / 100.0;
+    if (damage < 1.0) damage = 1.0;
+    
+    SDKHooks_TakeDamage(victim, attacker, attacker, damage, DMG_BLAST);
+}
+
+void StaggerPlayer(int client)
+{
+    if (!IsClientInGame(client) || !IsPlayerAlive(client)) return;
+    if (GetEntProp(client, Prop_Send, "m_isIncapacitated")) return;
+    SDKHooks_TakeDamage(client, client, client, 1.0, DMG_CLUB);
+}
+
+void ScreenShake(int client, float duration, float amplitude, float frequency)
+{
+    if (!IsClientInGame(client)) return;
+    Handle hBf = StartMessageOne("Shake", client);
+    if (hBf != null)
+    {
+        BfWriteByte(hBf, 0);
+        BfWriteFloat(hBf, amplitude);
+        BfWriteFloat(hBf, frequency);
+        BfWriteFloat(hBf, duration);
+        EndMessage();
+    }
+}
+
+public Action Timer_RemoveEntity(Handle timer, int ref)
+{
+    int entity = EntRefToEntIndex(ref);
+    if (entity != INVALID_ENT_REFERENCE && IsValidEntity(entity))
+        RemoveEntity(entity);
+    return Plugin_Stop;
+}
+
+void PrecacheParticle(const char[] particleName)
+{
+    if (strlen(particleName) == 0) return;
+    int particle = CreateEntityByName("info_particle_system");
+    if (particle != -1)
+    {
+        DispatchKeyValue(particle, "effect_name", particleName);
+        ActivateEntity(particle);
+        AcceptEntityInput(particle, "Start");
+        CreateTimer(0.1, Timer_RemoveEntity, EntIndexToEntRef(particle));
+    }
+}
