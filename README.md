@@ -26,9 +26,9 @@ These plugins enhance gameplay, fix common bugs, add admin tools, or customize s
 ### Included Plugins (example)
 | Plugin | Description |
 |--------|-------------|
-| `l4d2_weapon_drop_fix.sp` | Fix weapon dropping glitches |
-| `l4d2_survivor_bot_control.sp` | Advanced bot commands |
-| `l4d2_vote_manager.sp` | Custom voting system |
+| `l4d2_cola_drop_heal.sp` | Use cola to heal. |
+| `l4d2_selfkill_ultimate.sp` | Use selfkill commands to commit suicide. |
+| `l4d2_bodytrap.sp` | Attach grenades to survivors or infected. |
 
 *(Replace with your actual plugins)*
 
@@ -59,9 +59,9 @@ Các plugin giúp cải thiện lối chơi, sửa lỗi phổ biến, thêm cô
 ### Danh sách plugin (ví dụ)
 | Plugin | Mô tả |
 |--------|-------|
-| `l4d2_weapon_drop_fix.sp` | Sửa lỗi thả vũ khí |
-| `l4d2_survivor_bot_control.sp` | Điều khiển bot nâng cao |
-| `l4d2_vote_manager.sp` | Hệ thống bỏ phiếu tùy chỉnh |
+| `l4d2_cola_drop_heal.sp` | Sử dụng cola để hồi máu |
+| `l4d2_selfkill_ultimate.sp` | Sử dụng các lệnh selfkil để tự sát |
+| `l4d2_bodytrap.sp` | Gắn các loại lựu đạn lên người survivors hoặc infected |
 
 *(Thay bằng plugin thực tế của bạn)*
 
@@ -92,9 +92,9 @@ GPLv3 – xem file [LICENSE](LICENSE).
 ### 包含的插件（示例）
 | 插件 | 说明 |
 |------|------|
-| `l4d2_weapon_drop_fix.sp` | 修复武器丢弃的漏洞 |
-| `l4d2_survivor_bot_control.sp` | 高级机器人控制指令 |
-| `l4d2_vote_manager.sp` | 自定义投票系统 |
+| `l4d2_cola_drop_heal.sp` | 用可乐疗伤。 |
+| `l4d2_selfkill_ultimate.sp` | 使用自杀指令自杀。 |
+| `l4d2_bodytrap.sp` | 将手榴弹绑在幸存者或感染者身上。 |
 
 *(请替换为您实际的插件列表)*
 
