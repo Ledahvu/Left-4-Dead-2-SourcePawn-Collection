@@ -1,7 +1,3 @@
-# Left-4-Dead-2-SourcePawn-Collection
-SourcePawn plugins for Left 4 Dead 2 | Hỗ trợ đa ngôn ngữ | Các plugin SourceMod cho L4D2
-
-
 # 🧟 Left 4 Dead 2 SourcePawn Collection
 
 [![SourcePawn](https://img.shields.io/badge/SourcePawn-1.11+-blue.svg)](https://www.sourcemod.net/)
@@ -26,10 +22,11 @@ These plugins enhance gameplay, fix common bugs, add admin tools, or customize s
 ### Included Plugins (example)
 | Plugin | Description |
 |--------|-------------|
-| `l4d2_cola_drop_heal.sp` | Use cola to heal. |
-| `l4d2_selfkill_ultimate.sp` | Use selfkill commands to commit suicide. |
-| `l4d2_bodytrap.sp` | Attach grenades to survivors or infected. |
+| `l4d2_cola_drop_heal.sp` | Use cola to heal |
+| `l4d2_selfkill_ultimate.sp` | Use selfkill commands to commit suicide |
+| `l4d2_bodytrap.sp` | Attach grenades to survivors or infected |
 
+*(Replace with your actual plugins)*
 
 ### Installation
 1. Compile `.sp` files using `spcomp` (included with SourceMod).
@@ -62,6 +59,7 @@ Các plugin giúp cải thiện lối chơi, sửa lỗi phổ biến, thêm cô
 | `l4d2_selfkill_ultimate.sp` | Sử dụng các lệnh selfkil để tự sát |
 | `l4d2_bodytrap.sp` | Gắn các loại lựu đạn lên người survivors hoặc infected |
 
+*(Thay bằng plugin thực tế của bạn)*
 
 ### Cài đặt
 1. Biên dịch file `.sp` bằng `spcomp` (có sẵn trong SourceMod).
@@ -90,10 +88,11 @@ GPLv3 – xem file [LICENSE](LICENSE).
 ### 包含的插件（示例）
 | 插件 | 说明 |
 |------|------|
-| `l4d2_cola_drop_heal.sp` | 用可乐疗伤。 |
-| `l4d2_selfkill_ultimate.sp` | 使用自杀指令自杀。 |
-| `l4d2_bodytrap.sp` | 将手榴弹绑在幸存者或感染者身上。 |
+| `l4d2_cola_drop_heal.sp` | 用可乐疗伤 |
+| `l4d2_selfkill_ultimate.sp` | 使用自杀指令自杀 |
+| `l4d2_bodytrap.sp` | 将手榴弹绑在幸存者或感染者身上 |
 
+*(请替换为您实际的插件列表)*
 
 ### 安装方法
 1. 使用 `spcomp`（包含在 SourceMod 中）编译 `.sp` 文件。
