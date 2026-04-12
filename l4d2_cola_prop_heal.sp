@@ -21,7 +21,6 @@
 #pragma semicolon 1
 #pragma newdecls required
 
-#define PLUGIN_VERSION "11.0.0"
 #define COLA_W_MODEL "models/w_models/weapons/w_cola.mdl"
 #define COLA_V_MODEL "models/v_models/v_cola.mdl"
 #define ATTACH_HIP "medkit" 
@@ -32,7 +31,7 @@ public Plugin myinfo =
     name        = "[L4D2] Cola Prop Heal",
     author      = "Tyn Zũ",
     description = "Sử dụng cola để heal",
-    version     = PLUGIN_VERSION,
+    version     = "2.1",
     url         = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/"
 };
 
