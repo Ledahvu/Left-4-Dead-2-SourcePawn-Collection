@@ -25,7 +25,7 @@ public Plugin myinfo =
 {
 	name = "L4D2 C4 Ammo Box",
 	author = "Tyn Zũ",
-	description = "Place and detonate C4 using ammo packs",
+	description = "Place and detonate C4 using ammo packs (with color presets for beam ring)",
 	version = "2.0",
 	url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection"
 };
@@ -40,20 +40,17 @@ public Plugin myinfo =
 
 #define FIRE_SOUND "ambient/explosions/explode_1.wav"
 
-// Enum màu sắc preset
-enum BeamColorPreset
-{
-	Color_Red = 0,
-	Color_Green,
-	Color_Blue,
-	Color_Yellow,
-	Color_Cyan,
-	Color_Magenta,
-	Color_Orange,
-	Color_White,
-	Color_Purple,
-	COLOR_MAX  // Dùng để giới hạn giá trị
-};
+// Định nghĩa các màu preset (số thứ tự)
+#define COLOR_RED      0
+#define COLOR_GREEN    1
+#define COLOR_BLUE     2
+#define COLOR_YELLOW   3
+#define COLOR_CYAN     4
+#define COLOR_MAGENTA  5
+#define COLOR_ORANGE   6
+#define COLOR_WHITE    7
+#define COLOR_PURPLE   8
+#define COLOR_MAX      9  // Tổng số màu
 
 // Dữ liệu cho mỗi người chơi
 int g_C4Entity[MAXPLAYERS+1];
@@ -103,8 +100,9 @@ public void OnPluginStart()
 	g_CvarMaxUses = CreateConVar("l4d2_c4_max_uses", "4", "Max times ammo can be taken from C4 (0=unlimited). Only works if pickup allowed.", FCVAR_NOTIFY, true, 0.0);
 	g_CvarPlacementMode = CreateConVar("l4d2_c4_placement_mode", "0", "C4 placement mode: 0 = at crosshair, 1 = at player's feet", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	
-	g_CvarBeamColorFire = CreateConVar("l4d2_c4_beam_color_fire", "0", "Beam color for fire bomb (0=Red,1=Green,2=Blue,3=Yellow,4=Cyan,5=Magenta,6=Orange,7=White,8=Purple)", FCVAR_NOTIFY, true, 0.0, true, float(Color_Red), true, float(COLOR_MAX-1));
-	g_CvarBeamColorExplosive = CreateConVar("l4d2_c4_beam_color_explosive", "2", "Beam color for explosive bomb (0=Red,1=Green,2=Blue,3=Yellow,4=Cyan,5=Magenta,6=Orange,7=White,8=Purple)", FCVAR_NOTIFY, true, 0.0, true, float(Color_Blue), true, float(COLOR_MAX-1));
+	// Sửa lỗi: dùng float cho min/max, không dùng enum
+	g_CvarBeamColorFire = CreateConVar("l4d2_c4_beam_color_fire", "0", "Beam color for fire bomb (0=Red,1=Green,2=Blue,3=Yellow,4=Cyan,5=Magenta,6=Orange,7=White,8=Purple)", FCVAR_NOTIFY, true, 0.0, true, 8.0);
+	g_CvarBeamColorExplosive = CreateConVar("l4d2_c4_beam_color_explosive", "2", "Beam color for explosive bomb (0=Red,1=Green,2=Blue,3=Yellow,4=Cyan,5=Magenta,6=Orange,7=White,8=Purple)", FCVAR_NOTIFY, true, 0.0, true, 8.0);
 	
 	AutoExecConfig(true, "l4d2_c4_ammobox");
 	
@@ -408,20 +406,20 @@ public Action OnC4Use(int entity, int activator, int caller, UseType type, float
 	return Plugin_Handled;
 }
 
-// Lấy màu RGBA từ preset
+// Hàm lấy màu RGBA từ preset (int)
 void GetColorFromPreset(int preset, int color[4])
 {
 	switch (preset)
 	{
-		case Color_Red:     { color[0] = 255; color[1] = 0;   color[2] = 0;   }
-		case Color_Green:   { color[0] = 0;   color[1] = 255; color[2] = 0;   }
-		case Color_Blue:    { color[0] = 0;   color[1] = 0;   color[2] = 255; }
-		case Color_Yellow:  { color[0] = 255; color[1] = 255; color[2] = 0;   }
-		case Color_Cyan:    { color[0] = 0;   color[1] = 255; color[2] = 255; }
-		case Color_Magenta: { color[0] = 255; color[1] = 0;   color[2] = 255; }
-		case Color_Orange:  { color[0] = 255; color[1] = 128; color[2] = 0;   }
-		case Color_White:   { color[0] = 255; color[1] = 255; color[2] = 255; }
-		case Color_Purple:  { color[0] = 128; color[1] = 0;   color[2] = 128; }
+		case COLOR_RED:     { color[0] = 255; color[1] = 0;   color[2] = 0;   }
+		case COLOR_GREEN:   { color[0] = 0;   color[1] = 255; color[2] = 0;   }
+		case COLOR_BLUE:    { color[0] = 0;   color[1] = 0;   color[2] = 255; }
+		case COLOR_YELLOW:  { color[0] = 255; color[1] = 255; color[2] = 0;   }
+		case COLOR_CYAN:    { color[0] = 0;   color[1] = 255; color[2] = 255; }
+		case COLOR_MAGENTA: { color[0] = 255; color[1] = 0;   color[2] = 255; }
+		case COLOR_ORANGE:  { color[0] = 255; color[1] = 128; color[2] = 0;   }
+		case COLOR_WHITE:   { color[0] = 255; color[1] = 255; color[2] = 255; }
+		case COLOR_PURPLE:  { color[0] = 128; color[1] = 0;   color[2] = 128; }
 		default:            { color[0] = 255; color[1] = 0;   color[2] = 0;   }
 	}
 	color[3] = 255;  // Alpha mặc định 255
@@ -447,12 +445,11 @@ public Action Timer_BeamRing(Handle timer, int client)
 	GetEntPropVector(c4Ent, Prop_Data, "m_vecAbsOrigin", origin);
 	origin[2] += 5.0;
 	
-	// Xác định loại bom và lấy màu tương ứng từ cvar
 	int bombType = g_C4BombType[c4Ent];
 	int colorPreset;
-	if (bombType == 0)  // Bom lửa
+	if (bombType == 0)
 		colorPreset = g_CvarBeamColorFire.IntValue;
-	else                // Bom nổ
+	else
 		colorPreset = g_CvarBeamColorExplosive.IntValue;
 	
 	int color[4];
