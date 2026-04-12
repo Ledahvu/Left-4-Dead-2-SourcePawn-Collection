@@ -29,7 +29,7 @@ public Plugin myinfo =
     author = "Tyn Zũ",
     description = "Immortal Ghost Rider, Split CVars.",
     version = "15.0",
-    url = ""
+    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/"
 };
 
 // CVar Core
