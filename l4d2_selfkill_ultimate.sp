@@ -89,7 +89,7 @@ public Plugin myinfo =
     author      = "Tyn Zũ",
     description = "Tự sát siêu nổ (5x Propane), gravity hút gom đủ người mới nổ",
     version     = "10.2",
-    url         = ""
+    url         = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/"
 };
 
 public void OnMapStart()
