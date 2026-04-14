@@ -21,14 +21,12 @@
 #include <sdktools>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "2.1.0"
-
 public Plugin myinfo =
 {
 	name = "L4D2 C4 Ammo Box",
 	author = "Tyn Zũ",
 	description = "Place and detonate C4 (manual or countdown with hint attached to C4)",
-	version = PLUGIN_VERSION,
+	version = "2.1.0",
 	url = "https://github.com"
 };
 
@@ -67,7 +65,6 @@ int g_C4HintEntity[2048] = { -1, ... };
 float g_C4CountdownRemaining[2048] = { 0.0, ... };
 
 int g_BeamSpriteIndex = -1;
-int g_BeamFlashCount[MAXPLAYERS+1] = { 0, ... };  // Đếm số lần chớp trong giây hiện tại
 
 ConVar g_CvarEnable;
 ConVar g_CvarBeamStart;
@@ -77,7 +74,6 @@ ConVar g_CvarExplosionRadius;
 ConVar g_CvarCooldown;
 ConVar g_CvarBeamInterval;
 ConVar g_CvarPlaceDuration;
-ConVar g_CvarDebug;
 ConVar g_CvarAllowPickup;
 ConVar g_CvarMaxUses;
 ConVar g_CvarPlacementMode;
@@ -98,7 +94,6 @@ public void OnPluginStart()
 	g_CvarCooldown = CreateConVar("l4d2_c4_cooldown", "0.5", "Cooldown between actions", FCVAR_NOTIFY, true, 0.1);
 	g_CvarBeamInterval = CreateConVar("l4d2_c4_beam_interval", "0.1", "Beam ring update interval", FCVAR_NOTIFY, true, 0.05);
 	g_CvarPlaceDuration = CreateConVar("l4d2_c4_place_duration", "2.0", "Time in seconds to place C4", FCVAR_NOTIFY, true, 0.5);
-	g_CvarDebug = CreateConVar("l4d2_c4_debug", "0", "Enable debug", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	
 	g_CvarAllowPickup = CreateConVar("l4d2_c4_allow_pickup", "0", "Allow picking up ammo from placed C4 (0=No, 1=Yes)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	g_CvarMaxUses = CreateConVar("l4d2_c4_max_uses", "4", "Max times ammo can be taken from C4 (0=unlimited).", FCVAR_NOTIFY, true, 0.0);
@@ -347,17 +342,18 @@ void CreateCountdownHint(int c4, int entIndex, float initialTime)
 	char caption[64];
 	Format(caption, sizeof(caption), "%02d:%02d", mins, secs);
 	
-	DispatchKeyValue(hint, "hint_caption", caption);
-	DispatchKeyValue(hint, "hint_icon_onscreen", "icon_skull");
-	DispatchKeyValue(hint, "hint_color", "255 0 0");
+	DispatchKeyValue(hint, "hint_target", "");
+	DispatchKeyValue(hint, "hint_static", "1");
+	DispatchKeyValue(hint, "hint_range", "0");
 	DispatchKeyValue(hint, "hint_timeout", "0");
+	DispatchKeyValue(hint, "hint_icon_onscreen", "icon_skull");
+	DispatchKeyValue(hint, "hint_caption", caption);
+	DispatchKeyValue(hint, "hint_color", "255 0 0");
 	
 	TeleportEntity(hint, pos, NULL_VECTOR, NULL_VECTOR);
 	DispatchSpawn(hint);
 	
-	// Gắn hint làm con của C4 để nó di chuyển theo C4
-	SetVariantString("!activator");
-	AcceptEntityInput(hint, "SetParent", c4);
+	// KHÔNG sử dụng SetParent
 	
 	AcceptEntityInput(hint, "ShowHint");
 	
@@ -368,6 +364,13 @@ public Action Timer_UpdateCountdownHint(Handle timer, int entIndex)
 {
 	if (entIndex < 0 || entIndex >= 2048) return Plugin_Stop;
 	
+	int owner = g_C4Owner[entIndex];
+	if (owner <= 0 || owner > MaxClients || !IsClientInGame(owner))
+	{
+		g_C4HintUpdateTimer[entIndex] = null;
+		return Plugin_Stop;
+	}
+	
 	int hint = g_C4HintEntity[entIndex];
 	if (hint == -1 || !IsValidEntity(hint))
 	{
@@ -375,7 +378,7 @@ public Action Timer_UpdateCountdownHint(Handle timer, int entIndex)
 		return Plugin_Stop;
 	}
 	
-	// Cập nhật thời gian
+	// Giảm thời gian còn lại
 	float remaining = g_C4CountdownRemaining[entIndex] - 1.0;
 	if (remaining < 0.0) remaining = 0.0;
 	g_C4CountdownRemaining[entIndex] = remaining;
