@@ -21,26 +21,24 @@
 #include <sdktools>
 #include <sdkhooks>
 
+#define PLUGIN_VERSION "2.1.0"
+
 public Plugin myinfo =
 {
 	name = "L4D2 C4 Ammo Box",
 	author = "Tyn Zũ",
-	description = "Place and detonate C4 using ammo packs (with color presets for beam ring)",
-	version = "2.0",
-	url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection"
+	description = "Place and detonate C4 (manual or countdown with hint attached to C4)",
+	version = PLUGIN_VERSION,
+	url = "https://github.com"
 };
 
-// Entities cho hộp đạn đã triển khai
 #define EXPLOSIVE_AMMO_ENTITY "upgrade_ammo_explosive"
 #define INCENDIARY_AMMO_ENTITY "upgrade_ammo_incendiary"
 
-// Models cho hiệu ứng nổ
 #define GASCAN_MODEL "models/props_junk/gascan001a.mdl"
 #define PROPANE_MODEL "models/props_junk/propanecanister001a.mdl"
-
 #define FIRE_SOUND "ambient/explosions/explode_1.wav"
 
-// Định nghĩa các màu preset (số thứ tự)
 #define COLOR_RED      0
 #define COLOR_GREEN    1
 #define COLOR_BLUE     2
@@ -50,9 +48,7 @@ public Plugin myinfo =
 #define COLOR_ORANGE   6
 #define COLOR_WHITE    7
 #define COLOR_PURPLE   8
-#define COLOR_MAX      9  // Tổng số màu
 
-// Dữ liệu cho mỗi người chơi
 int g_C4Entity[MAXPLAYERS+1];
 int g_PlayerBombType[MAXPLAYERS+1];
 bool g_HasC4Placed[MAXPLAYERS+1];
@@ -62,12 +58,16 @@ Handle g_BeamTimer[MAXPLAYERS+1];
 float g_LastActionTime[MAXPLAYERS+1];
 float g_LastPlaceTime[MAXPLAYERS+1];
 
-// Dữ liệu cho mỗi C4 đã đặt (lưu trực tiếp trên entity)
 int g_C4UsesLeft[2048] = { -1, ... };
 int g_C4Owner[2048] = { -1, ... };
-int g_C4BombType[2048] = { -1, ... };   // Lưu loại bom của C4
+int g_C4BombType[2048] = { -1, ... };
+Handle g_C4CountdownTimer[2048] = { null, ... };
+Handle g_C4HintUpdateTimer[2048] = { null, ... };
+int g_C4HintEntity[2048] = { -1, ... };
+float g_C4CountdownRemaining[2048] = { 0.0, ... };
 
 int g_BeamSpriteIndex = -1;
+int g_BeamFlashCount[MAXPLAYERS+1] = { 0, ... };  // Đếm số lần chớp trong giây hiện tại
 
 ConVar g_CvarEnable;
 ConVar g_CvarBeamStart;
@@ -77,32 +77,40 @@ ConVar g_CvarExplosionRadius;
 ConVar g_CvarCooldown;
 ConVar g_CvarBeamInterval;
 ConVar g_CvarPlaceDuration;
-
+ConVar g_CvarDebug;
 ConVar g_CvarAllowPickup;
 ConVar g_CvarMaxUses;
 ConVar g_CvarPlacementMode;
-
-ConVar g_CvarBeamColorFire;        // Màu cho bom lửa
-ConVar g_CvarBeamColorExplosive;   // Màu cho bom nổ
+ConVar g_CvarBeamColorFire;
+ConVar g_CvarBeamColorExplosive;
+ConVar g_CvarDetonationMode;
+ConVar g_CvarCountdownTime;
+ConVar g_CvarShowCountdownHint;
+ConVar g_CvarBeamFlashPerSecond;   // Số lần beam chớp mỗi giây khi đếm ngược
 
 public void OnPluginStart()
 {
 	g_CvarEnable = CreateConVar("l4d2_c4_enable", "1", "Enable/disable C4 plugin", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	g_CvarBeamStart = CreateConVar("l4d2_c4_beam_radius_start", "30.0", "Beam ring start radius", FCVAR_NOTIFY, true, 0.0);
-	g_CvarBeamEnd = CreateConVar("l4d2_c4_beam_radius_end", "200.0", "Beam ring end radius", FCVAR_NOTIFY, true, 0.0);
+	g_CvarBeamEnd = CreateConVar("l4d2_c4_beam_radius_end", "70.0", "Beam ring end radius", FCVAR_NOTIFY, true, 0.0);
 	g_CvarExplosionMagnitude = CreateConVar("l4d2_c4_explosion_magnitude", "350", "Explosion magnitude", FCVAR_NOTIFY, true, 1.0);
 	g_CvarExplosionRadius = CreateConVar("l4d2_c4_explosion_radius", "600", "Explosion radius", FCVAR_NOTIFY, true, 1.0);
-	g_CvarCooldown = CreateConVar("l4d2_c4_cooldown", "1.5", "Cooldown between actions", FCVAR_NOTIFY, true, 0.1);
-	g_CvarBeamInterval = CreateConVar("l4d2_c4_beam_interval", "1.5", "Beam ring update interval", FCVAR_NOTIFY, true, 0.05);
+	g_CvarCooldown = CreateConVar("l4d2_c4_cooldown", "0.5", "Cooldown between actions", FCVAR_NOTIFY, true, 0.1);
+	g_CvarBeamInterval = CreateConVar("l4d2_c4_beam_interval", "0.1", "Beam ring update interval", FCVAR_NOTIFY, true, 0.05);
 	g_CvarPlaceDuration = CreateConVar("l4d2_c4_place_duration", "2.0", "Time in seconds to place C4", FCVAR_NOTIFY, true, 0.5);
+	g_CvarDebug = CreateConVar("l4d2_c4_debug", "0", "Enable debug", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	
 	g_CvarAllowPickup = CreateConVar("l4d2_c4_allow_pickup", "0", "Allow picking up ammo from placed C4 (0=No, 1=Yes)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	g_CvarMaxUses = CreateConVar("l4d2_c4_max_uses", "4", "Max times ammo can be taken from C4 (0=unlimited). Only works if pickup allowed.", FCVAR_NOTIFY, true, 0.0);
+	g_CvarMaxUses = CreateConVar("l4d2_c4_max_uses", "4", "Max times ammo can be taken from C4 (0=unlimited).", FCVAR_NOTIFY, true, 0.0);
 	g_CvarPlacementMode = CreateConVar("l4d2_c4_placement_mode", "0", "C4 placement mode: 0 = at crosshair, 1 = at player's feet", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	
-	// Sửa lỗi: dùng float cho min/max, không dùng enum
 	g_CvarBeamColorFire = CreateConVar("l4d2_c4_beam_color_fire", "0", "Beam color for fire bomb (0=Red,1=Green,2=Blue,3=Yellow,4=Cyan,5=Magenta,6=Orange,7=White,8=Purple)", FCVAR_NOTIFY, true, 0.0, true, 8.0);
-	g_CvarBeamColorExplosive = CreateConVar("l4d2_c4_beam_color_explosive", "2", "Beam color for explosive bomb (0=Red,1=Green,2=Blue,3=Yellow,4=Cyan,5=Magenta,6=Orange,7=White,8=Purple)", FCVAR_NOTIFY, true, 0.0, true, 8.0);
+	g_CvarBeamColorExplosive = CreateConVar("l4d2_c4_beam_color_explosive", "2", "Beam color for explosive bomb (same as above)", FCVAR_NOTIFY, true, 0.0, true, 8.0);
+	
+	g_CvarDetonationMode = CreateConVar("l4d2_c4_detonation_mode", "0", "Detonation mode: 0 = manual, 1 = countdown timer", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	g_CvarCountdownTime = CreateConVar("l4d2_c4_countdown_time", "10.0", "Countdown time in seconds before auto-detonation", FCVAR_NOTIFY, true, 1.0);
+	g_CvarShowCountdownHint = CreateConVar("l4d2_c4_show_countdown_hint", "1", "Show instructor hint with countdown at C4 location", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	g_CvarBeamFlashPerSecond = CreateConVar("l4d2_c4_beam_flash_per_second", "2", "How many times beam flashes per second during countdown", FCVAR_NOTIFY, true, 1.0);
 	
 	AutoExecConfig(true, "l4d2_c4_ammobox");
 	
@@ -146,12 +154,9 @@ public void OnClientDisconnect(int client)
 
 public void OnWeaponEquip(int client, int weapon)
 {
-	if (!client || !IsClientInGame(client) || !IsPlayerAlive(client))
-		return;
-	
+	if (!client || !IsClientInGame(client) || !IsPlayerAlive(client)) return;
 	char classname[64];
 	GetEntityClassname(weapon, classname, sizeof(classname));
-	
 	if (StrEqual(classname, "weapon_upgradepack_incendiary"))
 		g_PlayerBombType[client] = 0;
 	else if (StrEqual(classname, "weapon_upgradepack_explosive"))
@@ -160,8 +165,7 @@ public void OnWeaponEquip(int client, int weapon)
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon)
 {
-	if (!g_CvarEnable.BoolValue)
-		return Plugin_Continue;
+	if (!g_CvarEnable.BoolValue) return Plugin_Continue;
 	if (!IsPlayerAlive(client) || !IsClientInGame(client))
 	{
 		if (g_IsPlacing[client])
@@ -175,8 +179,8 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	float currentTime = GetGameTime();
 	float placeDuration = g_CvarPlaceDuration.FloatValue;
 	
-	// Kích hoạt nổ
-	if (g_HasC4Placed[client] && (buttons & IN_DUCK) && (buttons & IN_ATTACK))
+	// Kích nổ thủ công
+	if (g_CvarDetonationMode.IntValue == 0 && g_HasC4Placed[client] && (buttons & IN_DUCK) && (buttons & IN_ATTACK))
 	{
 		if (currentTime - g_LastPlaceTime[client] >= 0.5 && currentTime - g_LastActionTime[client] >= g_CvarCooldown.FloatValue)
 		{
@@ -195,9 +199,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		{
 			char classname[64];
 			GetEntityClassname(activeWeapon, classname, sizeof(classname));
-			bool isValidWeapon = (StrEqual(classname, "weapon_upgradepack_incendiary") || StrEqual(classname, "weapon_upgradepack_explosive"));
-			
-			if (isValidWeapon)
+			if (StrEqual(classname, "weapon_upgradepack_incendiary") || StrEqual(classname, "weapon_upgradepack_explosive"))
 			{
 				int bombType = g_PlayerBombType[client];
 				if (bombType != -1)
@@ -210,8 +212,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 						SetEntPropFloat(client, Prop_Send, "m_flProgressBarDuration", placeDuration);
 					}
 					
-					float elapsed = currentTime - g_PlaceStartTime[client];
-					if (elapsed >= placeDuration)
+					if (currentTime - g_PlaceStartTime[client] >= placeDuration)
 					{
 						PlaceC4(client, bombType);
 						SetEntPropFloat(client, Prop_Send, "m_flProgressBarDuration", 0.0);
@@ -219,12 +220,6 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 						g_LastPlaceTime[client] = currentTime;
 						RemoveAmmoPack(client);
 					}
-					else
-					{
-						SetEntPropFloat(client, Prop_Send, "m_flProgressBarStartTime", g_PlaceStartTime[client]);
-						SetEntPropFloat(client, Prop_Send, "m_flProgressBarDuration", placeDuration);
-					}
-					
 					buttons &= ~IN_ATTACK;
 					return Plugin_Continue;
 				}
@@ -266,59 +261,37 @@ void PlaceC4(int client, int bombType)
 {
 	float hitPos[3];
 	
-	if (g_CvarPlacementMode.IntValue == 1)  // Đặt tại chân
+	if (g_CvarPlacementMode.IntValue == 1)
 	{
 		GetClientAbsOrigin(client, hitPos);
-		
-		float traceStart[3];
-		traceStart[0] = hitPos[0];
-		traceStart[1] = hitPos[1];
-		traceStart[2] = hitPos[2] + 50.0;
-		
-		float traceEnd[3];
-		traceEnd[0] = hitPos[0];
-		traceEnd[1] = hitPos[1];
-		traceEnd[2] = hitPos[2] - 100.0;
-		
+		float traceStart[3], traceEnd[3];
+		traceStart = hitPos; traceStart[2] += 50.0;
+		traceEnd = hitPos;   traceEnd[2]   -= 100.0;
 		Handle trace = TR_TraceRayFilterEx(traceStart, traceEnd, MASK_SOLID, RayType_EndPoint, TraceFilter, client);
-		if (TR_DidHit(trace))
-		{
-			TR_GetEndPosition(hitPos, trace);
-		}
+		if (TR_DidHit(trace)) TR_GetEndPosition(hitPos, trace);
 		delete trace;
-		
 		hitPos[2] += 10.0;
 	}
-	else  // Đặt tại crosshair
+	else
 	{
 		float pos[3], ang[3];
 		GetClientEyePosition(client, pos);
 		GetClientEyeAngles(client, ang);
-		
 		Handle trace = TR_TraceRayFilterEx(pos, ang, MASK_SOLID, RayType_Infinite, TraceFilter, client);
 		if (TR_DidHit(trace))
 		{
 			TR_GetEndPosition(hitPos, trace);
 			hitPos[2] += 10.0;
 		}
-		else
-		{
-			delete trace;
-			return;
-		}
+		else { delete trace; return; }
 		delete trace;
 	}
 	
 	char entityName[64];
-	if (bombType == 0) {
-		strcopy(entityName, sizeof(entityName), INCENDIARY_AMMO_ENTITY);
-	} else {
-		strcopy(entityName, sizeof(entityName), EXPLOSIVE_AMMO_ENTITY);
-	}
+	strcopy(entityName, sizeof(entityName), (bombType == 0) ? INCENDIARY_AMMO_ENTITY : EXPLOSIVE_AMMO_ENTITY);
 	
 	int c4 = CreateEntityByName(entityName);
-	if (c4 == -1)
-		return;
+	if (c4 == -1) return;
 	
 	DispatchKeyValue(c4, "solid", "6");
 	TeleportEntity(c4, hitPos, NULL_VECTOR, NULL_VECTOR);
@@ -327,31 +300,114 @@ void PlaceC4(int client, int bombType)
 	g_C4Entity[client] = EntIndexToEntRef(c4);
 	g_HasC4Placed[client] = true;
 	
-	int entIndex = EntRefToEntIndex(g_C4Entity[client]);
-	if (entIndex != INVALID_ENT_REFERENCE)
+	int entIndex = c4;  // entity index trực tiếp
+	g_C4Owner[entIndex] = client;
+	g_C4BombType[entIndex] = bombType;
+	g_C4UsesLeft[entIndex] = g_CvarAllowPickup.BoolValue ? (g_CvarMaxUses.IntValue > 0 ? g_CvarMaxUses.IntValue : 0) : -1;
+	
+	// Chế độ đếm ngược
+	if (g_CvarDetonationMode.IntValue == 1)
 	{
-		g_C4Owner[entIndex] = client;
-		g_C4BombType[entIndex] = bombType;
+		float countdown = g_CvarCountdownTime.FloatValue;
+		g_C4CountdownRemaining[entIndex] = countdown;
+		g_C4CountdownTimer[entIndex] = CreateTimer(countdown, Timer_CountdownExplode, EntIndexToEntRef(c4));
 		
-		if (g_CvarAllowPickup.BoolValue)
+		if (g_CvarShowCountdownHint.BoolValue)
 		{
-			int maxUses = g_CvarMaxUses.IntValue;
-			g_C4UsesLeft[entIndex] = (maxUses > 0) ? maxUses : 0;
+			CreateCountdownHint(c4, entIndex, countdown);
+			g_C4HintUpdateTimer[entIndex] = CreateTimer(1.0, Timer_UpdateCountdownHint, entIndex, TIMER_REPEAT);
 		}
-		else
-		{
-			g_C4UsesLeft[entIndex] = -1;
-		}
+		
+		PrintToChat(client, "\x04[C4]\x01 %s bomb placed. Detonates in %.0f sec.", 
+			bombType == 0 ? "Fire" : "Explosive", countdown);
+	}
+	else
+	{
+		PrintToChat(client, "\x04[C4]\x01 %s bomb placed. Shift+Left Click to detonate.", 
+			bombType == 0 ? "Fire" : "Explosive");
 	}
 	
 	SDKHook(c4, SDKHook_Use, OnC4Use);
 	
-	if (g_BeamTimer[client] != null)
-		KillTimer(g_BeamTimer[client]);
+	if (g_BeamTimer[client] != null) KillTimer(g_BeamTimer[client]);
 	g_BeamTimer[client] = CreateTimer(g_CvarBeamInterval.FloatValue, Timer_BeamRing, client, TIMER_REPEAT);
+}
+
+void CreateCountdownHint(int c4, int entIndex, float initialTime)
+{
+	float pos[3];
+	GetEntPropVector(c4, Prop_Data, "m_vecAbsOrigin", pos);
+	pos[2] += 45.0;
 	
-	PrintToChat(client, "\x04[C4]\x01 %s bomb placed. Ctrl + Attack to detonate.", 
-		bombType == 0 ? "Fire" : "Explosive");
+	int hint = CreateEntityByName("env_instructor_hint");
+	if (hint == -1) return;
+	
+	int mins = RoundToFloor(initialTime / 60.0);
+	int secs = RoundToFloor(initialTime) % 60;
+	char caption[64];
+	Format(caption, sizeof(caption), "%02d:%02d", mins, secs);
+	
+	DispatchKeyValue(hint, "hint_caption", caption);
+	DispatchKeyValue(hint, "hint_icon_onscreen", "icon_skull");
+	DispatchKeyValue(hint, "hint_color", "255 0 0");
+	DispatchKeyValue(hint, "hint_timeout", "0");
+	
+	TeleportEntity(hint, pos, NULL_VECTOR, NULL_VECTOR);
+	DispatchSpawn(hint);
+	
+	// Gắn hint làm con của C4 để nó di chuyển theo C4
+	SetVariantString("!activator");
+	AcceptEntityInput(hint, "SetParent", c4);
+	
+	AcceptEntityInput(hint, "ShowHint");
+	
+	g_C4HintEntity[entIndex] = hint;
+}
+
+public Action Timer_UpdateCountdownHint(Handle timer, int entIndex)
+{
+	if (entIndex < 0 || entIndex >= 2048) return Plugin_Stop;
+	
+	int hint = g_C4HintEntity[entIndex];
+	if (hint == -1 || !IsValidEntity(hint))
+	{
+		g_C4HintUpdateTimer[entIndex] = null;
+		return Plugin_Stop;
+	}
+	
+	// Cập nhật thời gian
+	float remaining = g_C4CountdownRemaining[entIndex] - 1.0;
+	if (remaining < 0.0) remaining = 0.0;
+	g_C4CountdownRemaining[entIndex] = remaining;
+	
+	int mins = RoundToFloor(remaining / 60.0);
+	int secs = RoundToFloor(remaining) % 60;
+	char caption[64];
+	Format(caption, sizeof(caption), "%02d:%02d", mins, secs);
+	
+	SetVariantString(caption);
+	AcceptEntityInput(hint, "SetCaption");
+	
+	if (remaining <= 0.0)
+	{
+		g_C4HintUpdateTimer[entIndex] = null;
+		return Plugin_Stop;
+	}
+	
+	return Plugin_Continue;
+}
+
+void DestroyCountdownHint(int entIndex)
+{
+	if (g_C4HintUpdateTimer[entIndex] != null)
+	{
+		KillTimer(g_C4HintUpdateTimer[entIndex]);
+		g_C4HintUpdateTimer[entIndex] = null;
+	}
+	int hint = g_C4HintEntity[entIndex];
+	if (hint != -1 && IsValidEntity(hint))
+		AcceptEntityInput(hint, "Kill");
+	g_C4HintEntity[entIndex] = -1;
 }
 
 public Action OnC4Use(int entity, int activator, int caller, UseType type, float value)
@@ -360,9 +416,7 @@ public Action OnC4Use(int entity, int activator, int caller, UseType type, float
 	if (activator < 1 || activator > MaxClients) return Plugin_Continue;
 	if (!IsClientInGame(activator) || !IsPlayerAlive(activator)) return Plugin_Continue;
 	
-	int entIndex = EntRefToEntIndex(entity);
-	if (entIndex == INVALID_ENT_REFERENCE) return Plugin_Continue;
-	
+	int entIndex = entity;
 	int owner = g_C4Owner[entIndex];
 	if (owner == -1) return Plugin_Continue;
 	
@@ -373,56 +427,41 @@ public Action OnC4Use(int entity, int activator, int caller, UseType type, float
 	}
 	
 	int usesLeft = g_C4UsesLeft[entIndex];
-	if (usesLeft == 0)
-	{
-		return Plugin_Continue;
-	}
-	else if (usesLeft > 0)
+	if (usesLeft == 0) return Plugin_Continue;
+	if (usesLeft > 0)
 	{
 		g_C4UsesLeft[entIndex]--;
 		if (g_C4UsesLeft[entIndex] <= 0)
 		{
 			PrintHintText(activator, "C4 ammo depleted!");
-			
-			int client = owner;
-			if (client > 0 && IsClientInGame(client))
-			{
-				RemoveClientC4(client);
-				PrintToChat(client, "\x04[C4]\x01 Your C4 has been used up and disappeared.");
-			}
+			if (owner > 0 && IsClientInGame(owner))
+				RemoveClientC4(owner);
 			else
-			{
 				RemoveEntity(entity);
-			}
 			return Plugin_Handled;
 		}
-		else
-		{
-			PrintHintText(activator, "Ammo taken (%d uses left)", g_C4UsesLeft[entIndex]);
-		}
+		PrintHintText(activator, "Ammo taken (%d uses left)", g_C4UsesLeft[entIndex]);
 		return Plugin_Continue;
 	}
-	
 	return Plugin_Handled;
 }
 
-// Hàm lấy màu RGBA từ preset (int)
 void GetColorFromPreset(int preset, int color[4])
 {
 	switch (preset)
 	{
-		case COLOR_RED:     { color[0] = 255; color[1] = 0;   color[2] = 0;   }
-		case COLOR_GREEN:   { color[0] = 0;   color[1] = 255; color[2] = 0;   }
-		case COLOR_BLUE:    { color[0] = 0;   color[1] = 0;   color[2] = 255; }
-		case COLOR_YELLOW:  { color[0] = 255; color[1] = 255; color[2] = 0;   }
-		case COLOR_CYAN:    { color[0] = 0;   color[1] = 255; color[2] = 255; }
-		case COLOR_MAGENTA: { color[0] = 255; color[1] = 0;   color[2] = 255; }
-		case COLOR_ORANGE:  { color[0] = 255; color[1] = 128; color[2] = 0;   }
-		case COLOR_WHITE:   { color[0] = 255; color[1] = 255; color[2] = 255; }
-		case COLOR_PURPLE:  { color[0] = 128; color[1] = 0;   color[2] = 128; }
-		default:            { color[0] = 255; color[1] = 0;   color[2] = 0;   }
+		case COLOR_RED:     { color[0]=255; color[1]=0;   color[2]=0;   }
+		case COLOR_GREEN:   { color[0]=0;   color[1]=255; color[2]=0;   }
+		case COLOR_BLUE:    { color[0]=0;   color[1]=0;   color[2]=255; }
+		case COLOR_YELLOW:  { color[0]=255; color[1]=255; color[2]=0;   }
+		case COLOR_CYAN:    { color[0]=0;   color[1]=255; color[2]=255; }
+		case COLOR_MAGENTA: { color[0]=255; color[1]=0;   color[2]=255; }
+		case COLOR_ORANGE:  { color[0]=255; color[1]=128; color[2]=0;   }
+		case COLOR_WHITE:   { color[0]=255; color[1]=255; color[2]=255; }
+		case COLOR_PURPLE:  { color[0]=128; color[1]=0;   color[2]=128; }
+		default:            { color[0]=255; color[1]=0;   color[2]=0;   }
 	}
-	color[3] = 255;  // Alpha mặc định 255
+	color[3] = 255;
 }
 
 public Action Timer_BeamRing(Handle timer, int client)
@@ -441,32 +480,69 @@ public Action Timer_BeamRing(Handle timer, int client)
 		return Plugin_Stop;
 	}
 	
+	// Điều chỉnh tần suất chớp dựa trên thời gian còn lại nếu là chế độ đếm ngược
+	int flashCount = 1;
+	if (g_CvarDetonationMode.IntValue == 1)
+	{
+		int entIndex = c4Ent;
+		float remain = g_C4CountdownRemaining[entIndex];
+		// Tăng số lần chớp mỗi lần timer chạy để tạo hiệu ứng dồn dập khi gần nổ
+		flashCount = RoundToCeil(g_CvarBeamFlashPerSecond.FloatValue * (1.0 + (g_CvarCountdownTime.FloatValue - remain) / g_CvarCountdownTime.FloatValue * 2.0));
+		if (flashCount < 1) flashCount = 1;
+	}
+	
 	float origin[3];
 	GetEntPropVector(c4Ent, Prop_Data, "m_vecAbsOrigin", origin);
 	origin[2] += 5.0;
 	
 	int bombType = g_C4BombType[c4Ent];
-	int colorPreset;
-	if (bombType == 0)
-		colorPreset = g_CvarBeamColorFire.IntValue;
-	else
-		colorPreset = g_CvarBeamColorExplosive.IntValue;
-	
+	int colorPreset = (bombType == 0) ? g_CvarBeamColorFire.IntValue : g_CvarBeamColorExplosive.IntValue;
 	int color[4];
 	GetColorFromPreset(colorPreset, color);
 	
-	TE_SetupBeamRingPoint(origin, g_CvarBeamStart.FloatValue, g_CvarBeamEnd.FloatValue, 
-	                      g_BeamSpriteIndex, 0, 0, 0, 0.1, 5.0, 0.0, color, 10, 0);
-	TE_SendToAll();
+	for (int i = 0; i < flashCount; i++)
+	{
+		TE_SetupBeamRingPoint(origin, g_CvarBeamStart.FloatValue, g_CvarBeamEnd.FloatValue, 
+		                      g_BeamSpriteIndex, 0, 0, 0, 0.1, 5.0, 0.0, color, 10, 0);
+		TE_SendToAll();
+	}
 	
 	return Plugin_Continue;
 }
 
+public Action Timer_CountdownExplode(Handle timer, int c4Ref)
+{
+	int c4Ent = EntRefToEntIndex(c4Ref);
+	if (c4Ent == INVALID_ENT_REFERENCE || !IsValidEntity(c4Ent)) return Plugin_Stop;
+	
+	int owner = -1;
+	for (int i = 1; i <= MaxClients; i++)
+		if (g_HasC4Placed[i] && EntRefToEntIndex(g_C4Entity[i]) == c4Ent)
+			{ owner = i; break; }
+	
+	int entIndex = c4Ent;
+	g_C4CountdownTimer[entIndex] = null;
+	DestroyCountdownHint(entIndex);
+	
+	if (owner != -1 && IsClientInGame(owner))
+		DetonateC4(owner);
+	else
+	{
+		float pos[3]; GetEntPropVector(c4Ent, Prop_Data, "m_vecAbsOrigin", pos);
+		int bombType = g_C4BombType[entIndex];
+		if (bombType == 0) { CreateExplosiveFireEffect(pos); CreateExplosion(pos, 80, 200, 0); EmitSoundToAll(FIRE_SOUND); }
+		else { CreateExplosiveEffect(pos); CreateExplosion(pos, g_CvarExplosionMagnitude.IntValue, g_CvarExplosionRadius.IntValue, 0); }
+		RemoveEntity(c4Ent);
+		for (int i = 1; i <= MaxClients; i++)
+			if (EntRefToEntIndex(g_C4Entity[i]) == c4Ent)
+				RemoveClientC4(i);
+	}
+	return Plugin_Stop;
+}
+
 void DetonateC4(int client)
 {
-	if (!g_HasC4Placed[client])
-		return;
-	
+	if (!g_HasC4Placed[client]) return;
 	int c4Ent = EntRefToEntIndex(g_C4Entity[client]);
 	if (c4Ent == INVALID_ENT_REFERENCE || !IsValidEntity(c4Ent))
 	{
@@ -474,9 +550,15 @@ void DetonateC4(int client)
 		return;
 	}
 	
-	float pos[3];
-	GetEntPropVector(c4Ent, Prop_Data, "m_vecAbsOrigin", pos);
+	int entIndex = c4Ent;
+	if (g_C4CountdownTimer[entIndex] != null)
+	{
+		KillTimer(g_C4CountdownTimer[entIndex]);
+		g_C4CountdownTimer[entIndex] = null;
+	}
+	DestroyCountdownHint(entIndex);
 	
+	float pos[3]; GetEntPropVector(c4Ent, Prop_Data, "m_vecAbsOrigin", pos);
 	int bombType = g_PlayerBombType[client];
 	if (bombType == 0)
 	{
@@ -491,7 +573,6 @@ void DetonateC4(int client)
 		CreateExplosion(pos, g_CvarExplosionMagnitude.IntValue, g_CvarExplosionRadius.IntValue, client);
 		PrintToChatAll("\x04[C4]\x01 Explosive bomb detonated by %N", client);
 	}
-	
 	RemoveEntity(c4Ent);
 	RemoveClientC4(client);
 }
@@ -501,11 +582,7 @@ void CreateExplosiveFireEffect(float pos[3])
 	int propane = CreateEntityByName("prop_physics");
 	if (propane != -1)
 	{
-		float pPos[3];
-		pPos[0] = pos[0];
-		pPos[1] = pos[1];
-		pPos[2] = pos[2] + 10.0;
-
+		float pPos[3]; pPos = pos; pPos[2] += 10.0;
 		SetEntityModel(propane, PROPANE_MODEL);
 		DispatchKeyValue(propane, "solid", "6");
 		DispatchSpawn(propane);
@@ -514,7 +591,6 @@ void CreateExplosiveFireEffect(float pos[3])
 		AcceptEntityInput(propane, "Break");
 		CreateTimer(0.5, Timer_RemoveEntity, EntIndexToEntRef(propane));
 	}
-	
 	float offX[3] = {20.0, -10.0, -10.0};
 	float offY[3] = {0.0, 17.32, -17.32};
 	for (int i = 0; i < 3; i++)
@@ -522,11 +598,7 @@ void CreateExplosiveFireEffect(float pos[3])
 		int gascan = CreateEntityByName("prop_physics");
 		if (gascan != -1)
 		{
-			float gPos[3];
-			gPos[0] = pos[0] + offX[i];
-			gPos[1] = pos[1] + offY[i];
-			gPos[2] = pos[2] + 15.0;
-			
+			float gPos[3]; gPos[0] = pos[0] + offX[i]; gPos[1] = pos[1] + offY[i]; gPos[2] = pos[2] + 15.0;
 			SetEntityModel(gascan, GASCAN_MODEL);
 			DispatchKeyValue(gascan, "solid", "6");
 			DispatchSpawn(gascan);
@@ -543,17 +615,12 @@ void CreateExplosiveEffect(float pos[3])
 	float offX[5] = {0.0, 25.0, -25.0, 0.0, 0.0};
 	float offY[5] = {0.0, 0.0, 0.0, 25.0, -25.0};
 	float offZ[5] = {15.0, 15.0, 15.0, 15.0, 15.0};
-	
 	for (int i = 0; i < 5; i++)
 	{
 		int prop = CreateEntityByName("prop_physics");
 		if (prop != -1)
 		{
-			float spawnPos[3];
-			spawnPos[0] = pos[0] + offX[i];
-			spawnPos[1] = pos[1] + offY[i];
-			spawnPos[2] = pos[2] + offZ[i];
-			
+			float spawnPos[3]; spawnPos[0] = pos[0] + offX[i]; spawnPos[1] = pos[1] + offY[i]; spawnPos[2] = pos[2] + offZ[i];
 			SetEntityModel(prop, PROPANE_MODEL);
 			DispatchKeyValue(prop, "solid", "6");
 			DispatchSpawn(prop);
@@ -604,9 +671,16 @@ void RemoveClientC4(int client)
 		int c4Ent = EntRefToEntIndex(c4Ref);
 		if (c4Ent != INVALID_ENT_REFERENCE && IsValidEntity(c4Ent))
 		{
-			g_C4Owner[c4Ent] = -1;
-			g_C4UsesLeft[c4Ent] = -1;
-			g_C4BombType[c4Ent] = -1;
+			int entIndex = c4Ent;
+			if (g_C4CountdownTimer[entIndex] != null)
+			{
+				KillTimer(g_C4CountdownTimer[entIndex]);
+				g_C4CountdownTimer[entIndex] = null;
+			}
+			DestroyCountdownHint(entIndex);
+			g_C4Owner[entIndex] = -1;
+			g_C4UsesLeft[entIndex] = -1;
+			g_C4BombType[entIndex] = -1;
 			SDKUnhook(c4Ent, SDKHook_Use, OnC4Use);
 			RemoveEntity(c4Ent);
 		}
@@ -615,10 +689,7 @@ void RemoveClientC4(int client)
 	g_HasC4Placed[client] = false;
 }
 
-public bool TraceFilter(int entity, int mask, any data)
-{
-	return (entity != data);
-}
+public bool TraceFilter(int entity, int mask, any data) { return (entity != data); }
 
 public Action Event_PlayerHurt(Event event, const char[] name, bool dontBroadcast)
 {
@@ -652,11 +723,7 @@ public Action Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
 	for (int i = 1; i <= MaxClients; i++)
 	{
-		if (g_IsPlacing[i])
-		{
-			SetEntPropFloat(i, Prop_Send, "m_flProgressBarDuration", 0.0);
-			g_IsPlacing[i] = false;
-		}
+		if (g_IsPlacing[i]) SetEntPropFloat(i, Prop_Send, "m_flProgressBarDuration", 0.0);
 		RemoveClientC4(i);
 		g_PlayerBombType[i] = -1;
 	}
