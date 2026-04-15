@@ -1,5 +1,5 @@
 // <Bodytrap> - <Immortal Ghost Rider, Split CVars.>
-// Copyright (C) <2026> <Vũ Trường Tuyền>
+// Copyright (C) <2026> <Vũ Trường Tuyền - Tyn Zũ>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -27,8 +27,8 @@ public Plugin myinfo =
 {
     name = "Body Trap Advanced",
     author = "Tyn Zũ",
-    description = "ZSpawn Boomer Scanner Fixed, Pure VScript Stagger & DropSpit.",
-    version = "25.0",
+    description = "Use Molotov, PipeBomb, Vomitjar to set traps",
+    version = "27.0",
     url = ""
 };
 
@@ -37,38 +37,29 @@ ConVar g_cvEnable;
 ConVar g_cvRange;
 ConVar g_cvCountdown;
 
-// CVar Damage & Duration (Pipebomb)
+// CVar Damage & Duration
 ConVar g_cvPipeDamage;
 ConVar g_cvPipeRadius;
 ConVar g_cvPipeStaggerDuration; 
 
-// CVar Molotov
 ConVar g_cvMolotovBodyDamage;    
 ConVar g_cvMolotovTrailDamage;   
 ConVar g_cvMolotovDuration;      
 ConVar g_cvMolotovIgniteTime;    
 ConVar g_cvMolotovTrailDuration; 
 
-// CVar Vomit
 ConVar g_cvVomitDamage;
 ConVar g_cvVomitDuration;
 ConVar g_cvVomitRadius;
 ConVar g_cvVomitAcidScale;
 
-// CVar Beam Ring Colors
 ConVar g_cvBeamRadius;
 ConVar g_cvBeamWidth;
 ConVar g_cvColorPipe;
 ConVar g_cvColorMolotov;
 ConVar g_cvColorVomit;
 
-enum TrapType
-{
-    TYPE_NONE,
-    TYPE_PIPE,
-    TYPE_MOLOTOV,
-    TYPE_VOMIT
-};
+enum TrapType { TYPE_NONE, TYPE_PIPE, TYPE_MOLOTOV, TYPE_VOMIT };
 
 enum struct TrapData
 {
@@ -90,38 +81,44 @@ TrapType g_HoldingType[MAXPLAYERS+1];
 bool g_bIsTrapInflictor[MAX_EDICTS];
 TrapType g_TrapInflictorType[MAX_EDICTS];
 
+// Đánh dấu con Boomer sinh ra từ bẫy để chặn thông báo
+bool g_IsTrapBoomer[MAXPLAYERS+1];
+
 public void OnPluginStart()
 {
     g_cvEnable = CreateConVar("bodytrap_enable", "1", "Bật/tắt plugin");
     g_cvRange = CreateConVar("bodytrap_range", "150.0", "Khoảng cách gắn bẫy");
-    g_cvCountdown = CreateConVar("bodytrap_countdown", "5", "Thời gian đếm ngược (giây)");
+    g_cvCountdown = CreateConVar("bodytrap_countdown", "5", "Thời gian đếm ngược");
     
-    g_cvPipeDamage = CreateConVar("bodytrap_pipe_damage", "500.0", "Sát thương nổ của pipebomb");
-    g_cvPipeRadius = CreateConVar("bodytrap_pipe_radius", "400.0", "Bán kính nổ của pipebomb");
-    g_cvPipeStaggerDuration = CreateConVar("bodytrap_pipe_stagger_duration", "2.0", "Thời gian chao đảo (giây)");
+    g_cvPipeDamage = CreateConVar("bodytrap_pipe_damage", "500.0", "Sát thương nổ pipebomb");
+    g_cvPipeRadius = CreateConVar("bodytrap_pipe_radius", "400.0", "Bán kính pipebomb");
+    g_cvPipeStaggerDuration = CreateConVar("bodytrap_pipe_stagger_duration", "2.0", "Thời gian chao đảo");
     
-    g_cvMolotovBodyDamage = CreateConVar("bodytrap_molotov_body_damage", "10.0", "Sát thương thiêu đốt người bị gắn trap");
-    g_cvMolotovTrailDamage = CreateConVar("bodytrap_molotov_trail_damage", "5.0", "Sát thương của vệt lửa dưới đất");
-    g_cvMolotovDuration = CreateConVar("bodytrap_molotov_duration", "15.0", "Thời gian tồn tại của thùng xăng");
-    g_cvMolotovIgniteTime = CreateConVar("bodytrap_molotov_ignite_time", "10.0", "Thời gian ngọn lửa bám chặt");
-    g_cvMolotovTrailDuration = CreateConVar("bodytrap_molotov_trail_duration", "5.0", "Thời gian vệt lửa tồn tại");
+    g_cvMolotovBodyDamage = CreateConVar("bodytrap_molotov_body_damage", "10.0", "Sát thương thiêu đốt");
+    g_cvMolotovTrailDamage = CreateConVar("bodytrap_molotov_trail_damage", "5.0", "Sát thương vệt lửa");
+    g_cvMolotovDuration = CreateConVar("bodytrap_molotov_duration", "15.0", "Thời gian thùng xăng");
+    g_cvMolotovIgniteTime = CreateConVar("bodytrap_molotov_ignite_time", "10.0", "Thời gian bám lửa");
+    g_cvMolotovTrailDuration = CreateConVar("bodytrap_molotov_trail_duration", "5.0", "Thời gian vệt lửa");
     
-    g_cvVomitDamage = CreateConVar("bodytrap_vomit_damage", "0.0", "Sát thương mỗi tick của acid");
-    g_cvVomitDuration = CreateConVar("bodytrap_vomit_duration", "15.0", "Thời gian tồn tại bãi Acid");
-    g_cvVomitRadius = CreateConVar("bodytrap_vomit_radius", "250.0", "Bán kính mù của Vomit");
-    g_cvVomitAcidScale = CreateConVar("bodytrap_vomit_acid_scale", "1.0", "Khuếch đại vũng acid");
+    g_cvVomitDamage = CreateConVar("bodytrap_vomit_damage", "0.0", "Sát thương acid");
+    g_cvVomitDuration = CreateConVar("bodytrap_vomit_duration", "15.0", "Thời gian Acid");
+    g_cvVomitRadius = CreateConVar("bodytrap_vomit_radius", "250.0", "Bán kính mù");
+    g_cvVomitAcidScale = CreateConVar("bodytrap_vomit_acid_scale", "1.0", "Khuếch đại acid");
     
-    g_cvBeamRadius = CreateConVar("bodytrap_beam_radius", "50.0", "Bán kính vòng beam");
-    g_cvBeamWidth = CreateConVar("bodytrap_beam_width", "10.0", "Độ dày vòng beam");
-    g_cvColorPipe = CreateConVar("bodytrap_color_pipe", "255 0 0 255", "Màu vòng beam Pipebomb");
-    g_cvColorMolotov = CreateConVar("bodytrap_color_molotov", "255 128 0 255", "Màu vòng beam Molotov");
-    g_cvColorVomit = CreateConVar("bodytrap_color_vomit", "0 255 0 255", "Màu vòng beam Vomitjar");
+    g_cvBeamRadius = CreateConVar("bodytrap_beam_radius", "50.0", "");
+    g_cvBeamWidth = CreateConVar("bodytrap_beam_width", "10.0", "");
+    g_cvColorPipe = CreateConVar("bodytrap_color_pipe", "255 0 0 255", "");
+    g_cvColorMolotov = CreateConVar("bodytrap_color_molotov", "255 128 0 255", "");
+    g_cvColorVomit = CreateConVar("bodytrap_color_vomit", "0 255 0 255", "");
     
     AutoExecConfig(true, "bodytrap");
     
     HookEvent("entity_killed", Event_EntityKilled);
     HookEvent("round_end", Event_RoundEnd);
     HookEvent("round_start", Event_RoundStart);
+    
+    // HOOK TRƯỚC SỰ KIỆN ĐỂ CHẶN THÔNG BÁO GIẾT BOOMER
+    HookEvent("player_death", Event_PlayerDeath_Pre, EventHookMode_Pre);
     
     for (int i = 1; i <= MaxClients; i++)
     {
@@ -141,6 +138,27 @@ public void OnMapStart()
     PrecacheModel("models/props_junk/gascan001a.mdl", true); 
     PrecacheModel("models/props_junk/propanecanister001a.mdl", true); 
     PrecacheParticle("burning_character_fire");
+    
+    // FIX TẠI ĐÂY: Precache toàn bộ âm thanh sử dụng trong plugin
+    PrecacheSound("physics/glass/glass_bottle_break1.wav", true);
+    PrecacheSound("player/boomer/explode/exp_boomer.wav", true);
+    PrecacheSound("weapons/hegrenade/beep.wav", true);
+    PrecacheSound("ambient/explosions/explode_1.wav", true);
+}
+
+// Bắt và giấu nhẹm thông báo chết của Boomer Trap
+public Action Event_PlayerDeath_Pre(Event event, const char[] name, bool dontBroadcast)
+{
+    int victimId = event.GetInt("userid");
+    int victim = GetClientOfUserId(victimId);
+
+    if (victim > 0 && victim <= MaxClients && g_IsTrapBoomer[victim])
+    {
+        // Chặn hoàn toàn thông báo gửi đến người chơi (Kill Feed, Console)
+        event.BroadcastDisabled = true;
+        return Plugin_Handled;
+    }
+    return Plugin_Continue;
 }
 
 void PrecacheParticle(const char[] particleName)
@@ -161,6 +179,7 @@ public void OnClientPutInServer(int client)
     SDKHook(client, SDKHook_WeaponSwitch, OnWeaponSwitch);
     SDKHook(client, SDKHook_OnTakeDamage, Hook_OnTakeDamage);
     g_IsHolding[client] = false;
+    g_IsTrapBoomer[client] = false;
 }
 
 public void OnEntityCreated(int entity, const char[] classname)
@@ -429,7 +448,6 @@ void ExplodeTrap(int target)
     }
 }
 
-// ==== VSCRIPT STAGGER ====
 void ApplyStagger(int client, float pos[3])
 {
     if (client <= 0 || client > MaxClients || !IsClientInGame(client) || !IsPlayerAlive(client)) return;
@@ -749,10 +767,9 @@ bool GetGroundPosition(float pos[3], float groundPos[3])
     return hit;
 }
 
-// ==== VOMIT TRAP FIX: ZSPAWN SCANNER VỚI CELL DATA ==== //
+// ==== THE GHOST TRAP: VOMITJAR TÀNG HÌNH ==== //
 void ExecuteVomitjarEffect(float pos[3], int owner)
 {
-    // 1. VSCRIPT STAGGER
     for (int i = 1; i <= MaxClients; i++)
     {
         if (IsClientInGame(i) && GetClientTeam(i) == 2 && IsPlayerAlive(i))
@@ -766,7 +783,6 @@ void ExecuteVomitjarEffect(float pos[3], int owner)
         }
     }
 
-    // 2. ÉP ENGINE L4D2 ĐẺ MỘT CON BOOMER TỪ VSCRIPT
     int logicBoomer = CreateEntityByName("logic_script");
     if (logicBoomer != -1)
     {
@@ -778,18 +794,19 @@ void ExecuteVomitjarEffect(float pos[3], int owner)
         AcceptEntityInput(logicBoomer, "Kill");
     }
 
-    // 3. KHỞI TẠO RADAR QUÉT TÌM CON BOOMER VỪA ĐẺ
+    // Tăng tốc radar lên 0.02s (quét từng khung hình) để giấu Boomer ngay lập tức
     DataPack bPack;
-    CreateDataTimer(0.1, Timer_FindAndDetonateBoomer, bPack, TIMER_FLAG_NO_MAPCHANGE);
+    CreateDataTimer(0.02, Timer_FindAndDetonateBoomer, bPack, TIMER_FLAG_NO_MAPCHANGE);
     bPack.WriteFloat(pos[0]);
     bPack.WriteFloat(pos[1]);
     bPack.WriteFloat(pos[2] + 20.0);
     bPack.WriteCell(GetClientUserId(owner));
-    bPack.WriteCell(0); // LƯU Ý: Đã sửa thành WriteCell
+    bPack.WriteCell(0); 
 
+    // Ngụy trang âm thanh: Trộn tiếng thủy tinh vỡ của Vomitjar với tiếng Boomer nổ
+    EmitSoundToAll("physics/glass/glass_bottle_break1.wav", SOUND_FROM_WORLD, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 1.0, SNDPITCH_NORMAL, -1, pos);
     EmitSoundToAll("player/boomer/explode/exp_boomer.wav", SOUND_FROM_WORLD, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 1.0, SNDPITCH_NORMAL, -1, pos);
     
-    // 4. DROPSPIT VSCRIPT
     float groundPos[3];
     GetGroundPosition(pos, groundPos);
     
@@ -835,7 +852,7 @@ void ExecuteVomitjarEffect(float pos[3], int owner)
     TagTrapInflictor(groundPos, TYPE_VOMIT);
 }
 
-// Radar tìm và ép nổ Boomer
+// Radar siêu tốc: Tìm, Tàng Hình và Ép Tự Sát
 public Action Timer_FindAndDetonateBoomer(Handle timer, DataPack pack)
 {
     pack.Reset();
@@ -844,9 +861,10 @@ public Action Timer_FindAndDetonateBoomer(Handle timer, DataPack pack)
     pos[1] = pack.ReadFloat();
     pos[2] = pack.ReadFloat();
     int ownerUserId = pack.ReadCell();
-    int attempts = pack.ReadCell(); // LƯU Ý: Đã sửa thành ReadCell
+    int attempts = pack.ReadCell(); 
 
-    if (attempts >= 10) return Plugin_Stop; 
+    // Quét tối đa 50 lần (1 giây)
+    if (attempts >= 50) return Plugin_Stop; 
 
     bool found = false;
     for (int i = 1; i <= MaxClients; i++)
@@ -857,16 +875,18 @@ public Action Timer_FindAndDetonateBoomer(Handle timer, DataPack pack)
             GetClientAbsOrigin(i, bPos);
             if (GetVectorDistance(pos, bPos) < 200.0) 
             {
-                int owner = GetClientOfUserId(ownerUserId);
+                // 1. Đánh dấu nó là Trap Boomer để hàm Event_PlayerDeath_Pre chặn thông báo
+                g_IsTrapBoomer[i] = true;
 
+                // 2. Ép tàng hình ngay lập tức (Xóa bóng ma Boomer)
                 SetEntityRenderMode(i, RENDER_NONE);
+                SetEntityRenderColor(i, 0, 0, 0, 0);
 
-                if (owner > 0 && IsClientInGame(owner))
-                {
-                    SDKHooks_TakeDamage(i, owner, owner, 1000.0, 64);
-                }
+                // 3. Tự sát ẩn danh: Boomer (i) tự bắn Boomer (i), không phải owner!
+                SDKHooks_TakeDamage(i, i, i, 1000.0, 64);
                 ForcePlayerSuicide(i); 
 
+                // Xóa rác sau 0.1s
                 CreateTimer(0.1, Timer_KickFakeClient, GetClientUserId(i));
                 
                 found = true;
@@ -878,12 +898,12 @@ public Action Timer_FindAndDetonateBoomer(Handle timer, DataPack pack)
     if (!found)
     {
         DataPack newPack;
-        CreateDataTimer(0.1, Timer_FindAndDetonateBoomer, newPack, TIMER_FLAG_NO_MAPCHANGE);
+        CreateDataTimer(0.02, Timer_FindAndDetonateBoomer, newPack, TIMER_FLAG_NO_MAPCHANGE);
         newPack.WriteFloat(pos[0]);
         newPack.WriteFloat(pos[1]);
         newPack.WriteFloat(pos[2]);
         newPack.WriteCell(ownerUserId);
-        newPack.WriteCell(attempts + 1); // LƯU Ý: Đã sửa thành WriteCell
+        newPack.WriteCell(attempts + 1);
     }
 
     return Plugin_Stop;
@@ -894,6 +914,7 @@ public Action Timer_KickFakeClient(Handle timer, int userid)
     int client = GetClientOfUserId(userid);
     if (client > 0 && IsClientInGame(client) && IsFakeClient(client))
     {
+        g_IsTrapBoomer[client] = false; // Xóa cờ đánh dấu
         KickClient(client);
     }
     return Plugin_Stop;
