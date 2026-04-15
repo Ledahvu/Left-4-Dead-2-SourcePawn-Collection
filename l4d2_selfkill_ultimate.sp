@@ -1,5 +1,5 @@
 // <Selfkill Ultimate> - <Self-destruct explosion, gravity pulls in enough people to trigger the explosion>
-// Copyright (C) <2026> <Vũ Trường Tuyền>
+// Copyright (C) <2026> <Vũ Trường Tuyền - Tyn Zũ>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,7 +21,15 @@
 #pragma semicolon 1
 #pragma newdecls required
 
-// ==================== CVARS ====================
+// ==================== CVARS MỚI (BẬT/TẮT, GIỚI HẠN, FF) ====================
+bool g_bAllowInstant;
+bool g_bAllowPipe;
+bool g_bAllowGravity;
+bool g_bLimitPerChapter;
+bool g_bFriendlyFire;
+bool g_bHasUsedSelfkill[MAXPLAYERS+1]; // Theo dõi số lần sử dụng
+
+// ==================== CVARS CƠ BẢN ====================
 bool g_bEnabled;
 float g_fRadiusClose, g_fRadiusMid, g_fRadiusFar;
 int g_iActionClose, g_iActionMid;
@@ -36,7 +44,7 @@ float g_fGravityForce;
 float g_fGravityInterval;
 int g_iMaxTargets;
 float g_fGravityExplodeDist;
-int g_iGravityExplodeThreshold; // SỐ LƯỢNG NGƯỜI CẦN THIẾT ĐỂ NỔ
+int g_iGravityExplodeThreshold;
 
 // CVars cho sát thương SI/Tank
 int g_iSIDamageMode;
@@ -87,9 +95,9 @@ public Plugin myinfo =
 {
     name        = "L4D2 Selfkill Ultimate",
     author      = "Tyn Zũ",
-    description = "Tự sát siêu nổ (5x Propane), gravity hút gom đủ người mới nổ",
-    version     = "10.2",
-    url         = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/"
+    description = "Tự sát siêu nổ 5x, 1 lần/map",
+    version     = "10.4",
+    url         = ""
 };
 
 public void OnMapStart()
@@ -113,14 +121,23 @@ public void OnPluginStart()
     RegConsoleCmd("sm_selfkillp", Command_SelfKillPipe);
     RegConsoleCmd("sm_selfkillg", Command_SelfKillGravity);
 
+    HookEvent("round_start", Event_RoundStart, EventHookMode_PostNoCopy);
+
     for (int i = 1; i <= MaxClients; i++)
     {
         if (IsClientInGame(i))
             OnClientPutInServer(i);
     }
 
-    CreateConVar("selfkill_version", "10.2", "Plugin version", FCVAR_NOTIFY|FCVAR_DONTRECORD);
+    CreateConVar("selfkill_version", "10.4", "Plugin version", FCVAR_NOTIFY|FCVAR_DONTRECORD);
     ConVar cvEnable = CreateConVar("selfkill_enable", "1", "Bật/tắt plugin");
+
+    // CVars Quản lý & Giới hạn
+    ConVar cvAllowInstant = CreateConVar("selfkill_allow_instant", "1", "1=Bật, 0=Tắt lệnh !selfkill");
+    ConVar cvAllowPipe = CreateConVar("selfkill_allow_pipe", "1", "1=Bật, 0=Tắt lệnh !selfkillp");
+    ConVar cvAllowGravity = CreateConVar("selfkill_allow_gravity", "1", "1=Bật, 0=Tắt lệnh !selfkillg");
+    ConVar cvLimitPerChapter = CreateConVar("selfkill_limit_per_chapter", "1", "1 = Chỉ dùng 1 lần mỗi map/chapter, 0 = Không giới hạn");
+    ConVar cvFriendlyFire = CreateConVar("selfkill_friendly_fire", "1", "1 = Có gây sát thương cho đồng đội, 0 = Không gây sát thương/chao đảo");
     
     ConVar cvRadClose = CreateConVar("selfkill_radius_close", "150.0", "Bán kính vùng 1");
     ConVar cvRadMid = CreateConVar("selfkill_radius_mid", "300.0", "Bán kính vùng 2");
@@ -182,6 +199,12 @@ public void OnPluginStart()
 
     // Hook CVars
     cvEnable.AddChangeHook(OnCvarChanged);
+    cvAllowInstant.AddChangeHook(OnCvarChanged);
+    cvAllowPipe.AddChangeHook(OnCvarChanged);
+    cvAllowGravity.AddChangeHook(OnCvarChanged);
+    cvLimitPerChapter.AddChangeHook(OnCvarChanged);
+    cvFriendlyFire.AddChangeHook(OnCvarChanged);
+    
     cvRadClose.AddChangeHook(OnCvarChanged);
     cvRadMid.AddChangeHook(OnCvarChanged);
     cvRadFar.AddChangeHook(OnCvarChanged);
@@ -235,9 +258,19 @@ public void OnPluginStart()
     UpdateAllCvars();
 }
 
+public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+{
+    // Reset lại số lần sử dụng khi bắt đầu map mới hoặc restart lại màn chơi
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        g_bHasUsedSelfkill[i] = false;
+    }
+}
+
 public void OnClientPutInServer(int client)
 {
     g_bShiftPressed[client] = false;
+    g_bHasUsedSelfkill[client] = false;
 }
 
 public void OnCvarChanged(ConVar convar, const char[] oldValue, const char[] newValue)
@@ -260,6 +293,12 @@ void ParseColor(const char[] str, int color[4])
 void UpdateAllCvars()
 {
     g_bEnabled = GetConVarBool(FindConVar("selfkill_enable"));
+    g_bAllowInstant = GetConVarBool(FindConVar("selfkill_allow_instant"));
+    g_bAllowPipe = GetConVarBool(FindConVar("selfkill_allow_pipe"));
+    g_bAllowGravity = GetConVarBool(FindConVar("selfkill_allow_gravity"));
+    g_bLimitPerChapter = GetConVarBool(FindConVar("selfkill_limit_per_chapter"));
+    g_bFriendlyFire = GetConVarBool(FindConVar("selfkill_friendly_fire"));
+
     g_fRadiusClose = GetConVarFloat(FindConVar("selfkill_radius_close"));
     g_fRadiusMid = GetConVarFloat(FindConVar("selfkill_radius_mid"));
     g_fRadiusFar = GetConVarFloat(FindConVar("selfkill_radius_far"));
@@ -349,6 +388,18 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 public Action Command_SelfKill(int client, int args)
 {
     if (!g_bEnabled || !IsValidAlive(client)) return Plugin_Handled;
+    if (!g_bAllowInstant)
+    {
+        PrintToChat(client, "[SM] Lệnh nổ ngay đã bị Admin tắt!");
+        return Plugin_Handled;
+    }
+    if (g_bLimitPerChapter && g_bHasUsedSelfkill[client])
+    {
+        PrintToChat(client, "[SM] Bạn đã dùng quyền tự sát trong chapter này rồi!");
+        return Plugin_Handled;
+    }
+
+    g_bHasUsedSelfkill[client] = true;
     DoExplosionAtClient(client);
     PrintToChat(client, "[SM] Bạn đã tự nổ tung!");
     return Plugin_Handled;
@@ -358,7 +409,18 @@ public Action Command_SelfKill(int client, int args)
 public Action Command_SelfKillPipe(int client, int args)
 {
     if (!g_bEnabled || !IsValidAlive(client) || g_bPipeActive[client]) return Plugin_Handled;
+    if (!g_bAllowPipe)
+    {
+        PrintToChat(client, "[SM] Lệnh hẹn giờ nổ đã bị Admin tắt!");
+        return Plugin_Handled;
+    }
+    if (g_bLimitPerChapter && g_bHasUsedSelfkill[client])
+    {
+        PrintToChat(client, "[SM] Bạn đã dùng quyền tự sát trong chapter này rồi!");
+        return Plugin_Handled;
+    }
     
+    g_bHasUsedSelfkill[client] = true;
     g_bPipeActive[client] = true;
     g_iPipeCountdown[client] = g_iPipeTime;
 
@@ -519,12 +581,28 @@ void ResetPipeState(int client)
 public Action Command_SelfKillGravity(int client, int args)
 {
     if (!g_bEnabled || !IsValidAlive(client)) return Plugin_Handled;
+    if (!g_bAllowGravity)
+    {
+        PrintToChat(client, "[SM] Lệnh nổ Gravity đã bị Admin tắt!");
+        return Plugin_Handled;
+    }
+
     if (g_bGravityActive[client])
     {
         ResetGravityState(client);
-        PrintToChat(client, "[SM] Đã hủy chế độ gravity.");
+        // Hoàn trả lại quyền dùng nếu người chơi tự hủy
+        g_bHasUsedSelfkill[client] = false; 
+        PrintToChat(client, "[SM] Đã hủy chế độ gravity và hoàn trả lại quyền tự sát.");
         return Plugin_Handled;
     }
+
+    if (g_bLimitPerChapter && g_bHasUsedSelfkill[client])
+    {
+        PrintToChat(client, "[SM] Bạn đã dùng quyền tự sát trong chapter này rồi!");
+        return Plugin_Handled;
+    }
+
+    g_bHasUsedSelfkill[client] = true;
     g_bGravityActive[client] = true;
     g_bShiftPressed[client] = false;
     PrintToChat(client, "[SM] Chế độ Gravity kích hoạt. Giữ phím SHIFT để hút các mục tiêu xung quanh.");
@@ -607,7 +685,7 @@ public Action Timer_GravityPull(Handle timer, int client)
         GetClientAbsOrigin(target, targetPos);
         float distance = GetVectorDistance(clientPos, targetPos);
 
-        // Nếu người này đã ở rất gần (nhỏ hơn 20 units) thì giữ nguyên vị trí, không hút thêm tránh bị đẩy lùi (glitch)
+        // Nếu người này đã ở rất gần (nhỏ hơn 20 units) thì giữ nguyên vị trí, không hút thêm
         if (distance <= 20.0) continue; 
 
         float dir[3];
@@ -621,7 +699,6 @@ public Action Timer_GravityPull(Handle timer, int client)
         if (force < 10.0) force = 10.0;
         float pullDistance = force * g_fGravityInterval;
         
-        // Không kéo quá sát gây kẹt
         if (pullDistance > distance - 20.0) pullDistance = distance - 20.0;
 
         float newPos[3];
@@ -650,6 +727,26 @@ void DoExplosionAtClient(int client)
     float pos[3];
     GetClientAbsOrigin(client, pos);
     
+    // =========================================================================
+    // BUFF GOD MODE CHO ĐỒNG ĐỘI NẾU FF = 0 TRƯỚC KHI BÌNH GAS VẬT LÝ NỔ
+    // Điều này sẽ chặn đứng việc bình gas gây sát thương vật lý lên người sống sót.
+    // Và nhường lại quyền tính toán sát thương cho đoạn mã kiểm tra bằng Cvar bên dưới.
+    // =========================================================================
+    int originalTakeDamage[MAXPLAYERS+1];
+    
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && IsPlayerAlive(i) && GetClientTeam(i) == 2 && i != client)
+        {
+            originalTakeDamage[i] = GetEntProp(i, Prop_Data, "m_takedamage");
+            
+            // Nếu tắt sát thương đồng đội, set m_takedamage = 0 (Hoàn toàn miễn nhiễm sát thương)
+            // Ngay cả khi BẬT sát thương đồng đội, ta cũng chặn để tránh sát thương vật lý của gas
+            // đánh gục đồng đội quá sớm (bỏ qua thiết lập cvar g_iActionMid, g_iActionClose).
+            SetEntProp(i, Prop_Data, "m_takedamage", 0); 
+        }
+    }
+    
     // 1. Tạo hiệu ứng nổ siêu lớn bằng cách đập vỡ (Break) 5 bình gas tàng hình NGAY LẬP TỨC
     for (int k = 0; k < 5; k++) 
     {
@@ -662,14 +759,21 @@ void DoExplosionAtClient(int client)
             TeleportEntity(propane, pos, NULL_VECTOR, NULL_VECTOR);
             ActivateEntity(propane);
             SetEntityRenderMode(propane, RENDER_TRANSCOLOR);
-            SetEntityRenderColor(propane, 0, 0, 0, 0); // Làm tàng hình bình gas
-            
-            // SỬ DỤNG "Break" ĐỂ NỔ NGAY LẬP TỨC
+            SetEntityRenderColor(propane, 0, 0, 0, 0); 
             AcceptEntityInput(propane, "Break", client, client);
         }
     }
 
-    // Vẫn giữ lại env_explosion cho particle bổ trợ
+    // KHÔI PHỤC LẠI TRẠNG THÁI NHẬN SÁT THƯƠNG BAN ĐẦU CHO ĐỒNG ĐỘI SAU KHI GAS NỔ XONG
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && IsPlayerAlive(i) && GetClientTeam(i) == 2 && i != client)
+        {
+            SetEntProp(i, Prop_Data, "m_takedamage", originalTakeDamage[i]);
+        }
+    }
+    // =========================================================================
+
     int explosion = CreateEntityByName("env_explosion");
     if (explosion != -1)
     {
@@ -688,7 +792,7 @@ void DoExplosionAtClient(int client)
 
     float shakeRadius = g_fRadiusFar * g_fShakeRadiusMultiplier;
 
-    // 2. Sát thương cho Người chơi
+    // 2. Tính toán sát thương tự code chuẩn theo Cvars / Xử lý Friendly Fire
     float victimPos[3];
     float distance;
     for (int i = 1; i <= MaxClients; i++)
@@ -698,41 +802,62 @@ void DoExplosionAtClient(int client)
         GetClientAbsOrigin(i, victimPos);
         distance = GetVectorDistance(pos, victimPos);
         
+        bool isSurvivor = (GetClientTeam(i) == 2);
+        
         if (distance <= g_fRadiusFar)
         {
-            bool bIncap = (GetClientTeam(i) == 2 && GetEntProp(i, Prop_Send, "m_isIncapacitated"));
+            bool bIncap = (isSurvivor && GetEntProp(i, Prop_Send, "m_isIncapacitated"));
             
-            if (distance <= g_fRadiusClose)
+            // Nếu là Survivor và đã Tắt Sát thương đồng đội (FF = 0)
+            if (isSurvivor && !g_bFriendlyFire)
             {
-                if (g_iActionClose == 0) KillPlayer(i, client);
-                else IncapPlayer(i, client);
-                
-                if (g_bShakeEnable) ScreenShake(i, g_fShakeCloseDuration, g_fShakeCloseAmplitude, g_fShakeCloseFrequency);
+                // Chỉ rung màn hình, không trừ máu hay ngã gục
+                if (g_bShakeEnable) 
+                {
+                    if (distance <= g_fRadiusClose) ScreenShake(i, g_fShakeCloseDuration, g_fShakeCloseAmplitude, g_fShakeCloseFrequency);
+                    else if (distance <= g_fRadiusMid) ScreenShake(i, g_fShakeMidDuration, g_fShakeMidAmplitude, g_fShakeMidFrequency);
+                    else ScreenShake(i, g_fShakeFarDuration, g_fShakeFarAmplitude, g_fShakeFarFrequency);
+                }
             }
-            else if (distance <= g_fRadiusMid)
+            else // Nếu là Zombie HOẶC đang Bật FF
             {
-                if (g_iActionMid == 0) IncapPlayer(i, client);
-                else DamagePlayerPercent(i, client, distance);
-                
-                if (g_bShakeEnable) ScreenShake(i, g_fShakeMidDuration, g_fShakeMidAmplitude, g_fShakeMidFrequency);
-                if (!bIncap && g_bStaggerEnable && g_iActionMid == 1) StaggerPlayer(i);
-            }
-            else
-            {
-                DamagePlayerPercent(i, client, distance);
-                if (g_bShakeEnable) ScreenShake(i, g_fShakeFarDuration, g_fShakeFarAmplitude, g_fShakeFarFrequency);
-                if (!bIncap && g_bStaggerEnable) StaggerPlayer(i);
+                if (distance <= g_fRadiusClose)
+                {
+                    if (g_iActionClose == 0) KillPlayer(i, client);
+                    else IncapPlayer(i, client);
+                    
+                    if (g_bShakeEnable) ScreenShake(i, g_fShakeCloseDuration, g_fShakeCloseAmplitude, g_fShakeCloseFrequency);
+                }
+                else if (distance <= g_fRadiusMid)
+                {
+                    if (g_iActionMid == 0) IncapPlayer(i, client);
+                    else DamagePlayerPercent(i, client, distance);
+                    
+                    if (g_bShakeEnable) ScreenShake(i, g_fShakeMidDuration, g_fShakeMidAmplitude, g_fShakeMidFrequency);
+                    if (!bIncap && g_bStaggerEnable && g_iActionMid == 1) StaggerPlayer(i);
+                }
+                else
+                {
+                    DamagePlayerPercent(i, client, distance);
+                    if (g_bShakeEnable) ScreenShake(i, g_fShakeFarDuration, g_fShakeFarAmplitude, g_fShakeFarFrequency);
+                    if (!bIncap && g_bStaggerEnable) StaggerPlayer(i);
+                }
             }
         }
         else if (distance <= shakeRadius)
         {
             if (g_bShakeEnable) ScreenShake(i, g_fShakeOuterDuration, g_fShakeOuterAmplitude, g_fShakeOuterFrequency);
-            bool bIncap = (GetClientTeam(i) == 2 && GetEntProp(i, Prop_Send, "m_isIncapacitated"));
-            if (!bIncap && g_bStaggerEnable) StaggerPlayer(i);
+            
+            // Chỉ chao đảo nếu bật FF (đối với survivor) hoặc nạn nhân là Zombie
+            if (!(isSurvivor && !g_bFriendlyFire))
+            {
+                bool bIncap = (isSurvivor && GetEntProp(i, Prop_Send, "m_isIncapacitated"));
+                if (!bIncap && g_bStaggerEnable) StaggerPlayer(i);
+            }
         }
     }
 
-    // 3. Tiêu diệt CI/SI
+    // 3. Tiêu diệt CI/SI (Bot)
     int entity = -1;
     while ((entity = FindEntityByClassname(entity, "infected")) != -1)
     {
