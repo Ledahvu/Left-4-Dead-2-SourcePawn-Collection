@@ -27,9 +27,9 @@ public Plugin myinfo =
 {
     name = "Body Trap Advanced",
     author = "Tyn Zũ",
-    description = "Immortal Ghost Rider, Split CVars.",
-    version = "15.0",
-    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/"
+    description = "ZSpawn Boomer Scanner Fixed, Pure VScript Stagger & DropSpit.",
+    version = "25.0",
+    url = ""
 };
 
 // CVar Core
@@ -42,7 +42,7 @@ ConVar g_cvPipeDamage;
 ConVar g_cvPipeRadius;
 ConVar g_cvPipeStaggerDuration; 
 
-// CVar Molotov (Tách biệt Body và Trail)
+// CVar Molotov
 ConVar g_cvMolotovBodyDamage;    
 ConVar g_cvMolotovTrailDamage;   
 ConVar g_cvMolotovDuration;      
@@ -61,10 +61,6 @@ ConVar g_cvBeamWidth;
 ConVar g_cvColorPipe;
 ConVar g_cvColorMolotov;
 ConVar g_cvColorVomit;
-
-// SDKCall Handles
-Handle g_hVomitOnPlayer;
-Handle g_hSpitterDetonate;
 
 enum TrapType
 {
@@ -96,24 +92,6 @@ TrapType g_TrapInflictorType[MAX_EDICTS];
 
 public void OnPluginStart()
 {
-    Handle conf = LoadGameConfigFile("l4d2_bodytrap");
-    if (conf != null)
-    {
-        StartPrepSDKCall(SDKCall_Player);
-        if (PrepSDKCall_SetFromConf(conf, SDKConf_Signature, "CTerrorPlayer_OnVomitedUpon"))
-        {
-            PrepSDKCall_AddParameter(SDKType_CBasePlayer, SDKPass_Pointer);
-            PrepSDKCall_AddParameter(SDKType_Bool, SDKPass_Plain);
-            g_hVomitOnPlayer = EndPrepSDKCall();
-        }
-        
-        StartPrepSDKCall(SDKCall_Entity);
-        if (PrepSDKCall_SetFromConf(conf, SDKConf_Signature, "CSpitterProjectile_Detonate"))
-            g_hSpitterDetonate = EndPrepSDKCall();
-            
-        CloseHandle(conf);
-    }
-
     g_cvEnable = CreateConVar("bodytrap_enable", "1", "Bật/tắt plugin");
     g_cvRange = CreateConVar("bodytrap_range", "150.0", "Khoảng cách gắn bẫy");
     g_cvCountdown = CreateConVar("bodytrap_countdown", "5", "Thời gian đếm ngược (giây)");
@@ -122,14 +100,14 @@ public void OnPluginStart()
     g_cvPipeRadius = CreateConVar("bodytrap_pipe_radius", "400.0", "Bán kính nổ của pipebomb");
     g_cvPipeStaggerDuration = CreateConVar("bodytrap_pipe_stagger_duration", "2.0", "Thời gian chao đảo (giây)");
     
-    g_cvMolotovBodyDamage = CreateConVar("bodytrap_molotov_body_damage", "10.0", "Sát thương thiêu đốt người bị gắn trap (mỗi 0.5s)");
-    g_cvMolotovTrailDamage = CreateConVar("bodytrap_molotov_trail_damage", "5.0", "Sát thương của vệt lửa dưới đất (DPS)");
-    g_cvMolotovDuration = CreateConVar("bodytrap_molotov_duration", "15.0", "Thời gian tồn tại của 3 thùng xăng trung tâm (giây)");
-    g_cvMolotovIgniteTime = CreateConVar("bodytrap_molotov_ignite_time", "10.0", "Thời gian ngọn lửa bám chặt trên cơ thể (giây)");
-    g_cvMolotovTrailDuration = CreateConVar("bodytrap_molotov_trail_duration", "5.0", "Thời gian vệt lửa tồn tại trên mặt đất (giây)");
+    g_cvMolotovBodyDamage = CreateConVar("bodytrap_molotov_body_damage", "10.0", "Sát thương thiêu đốt người bị gắn trap");
+    g_cvMolotovTrailDamage = CreateConVar("bodytrap_molotov_trail_damage", "5.0", "Sát thương của vệt lửa dưới đất");
+    g_cvMolotovDuration = CreateConVar("bodytrap_molotov_duration", "15.0", "Thời gian tồn tại của thùng xăng");
+    g_cvMolotovIgniteTime = CreateConVar("bodytrap_molotov_ignite_time", "10.0", "Thời gian ngọn lửa bám chặt");
+    g_cvMolotovTrailDuration = CreateConVar("bodytrap_molotov_trail_duration", "5.0", "Thời gian vệt lửa tồn tại");
     
     g_cvVomitDamage = CreateConVar("bodytrap_vomit_damage", "0.0", "Sát thương mỗi tick của acid");
-    g_cvVomitDuration = CreateConVar("bodytrap_vomit_duration", "15.0", "Thời gian tồn tại bãi Acid (giây)");
+    g_cvVomitDuration = CreateConVar("bodytrap_vomit_duration", "15.0", "Thời gian tồn tại bãi Acid");
     g_cvVomitRadius = CreateConVar("bodytrap_vomit_radius", "250.0", "Bán kính mù của Vomit");
     g_cvVomitAcidScale = CreateConVar("bodytrap_vomit_acid_scale", "1.0", "Khuếch đại vũng acid");
     
@@ -139,7 +117,7 @@ public void OnPluginStart()
     g_cvColorMolotov = CreateConVar("bodytrap_color_molotov", "255 128 0 255", "Màu vòng beam Molotov");
     g_cvColorVomit = CreateConVar("bodytrap_color_vomit", "0 255 0 255", "Màu vòng beam Vomitjar");
     
-    AutoExecConfig(true, "l4d2_bodytrap");
+    AutoExecConfig(true, "bodytrap");
     
     HookEvent("entity_killed", Event_EntityKilled);
     HookEvent("round_end", Event_RoundEnd);
@@ -372,6 +350,14 @@ void CreateInstructorHint(int target, int timeleft, TrapType type)
     int hint = CreateEntityByName("env_instructor_hint");
     if (hint != -1)
     {
+        char sTargetName[64];
+        GetEntPropString(target, Prop_Data, "m_iName", sTargetName, sizeof(sTargetName));
+        if (sTargetName[0] == '\0') 
+        {
+            Format(sTargetName, sizeof(sTargetName), "trap_victim_%d", target);
+            DispatchKeyValue(target, "targetname", sTargetName);
+        }
+
         char sCaption[64], sColor[32];
         Format(sCaption, sizeof(sCaption), "BOM NỔ SAU %d GIÂY!", timeleft);
 
@@ -379,6 +365,7 @@ void CreateInstructorHint(int target, int timeleft, TrapType type)
         else if (type == TYPE_MOLOTOV) strcopy(sColor, sizeof(sColor), "255 128 0");
         else strcopy(sColor, sizeof(sColor), "0 255 0");
 
+        DispatchKeyValue(hint, "hint_target", sTargetName);
         DispatchKeyValue(hint, "hint_caption", sCaption);
         DispatchKeyValue(hint, "hint_color", sColor);
         DispatchKeyValue(hint, "hint_timeout", "1.1");
@@ -394,8 +381,8 @@ void CreateInstructorHint(int target, int timeleft, TrapType type)
         pos[2] += 80.0;
         TeleportEntity(hint, pos, NULL_VECTOR, NULL_VECTOR);
         
-        SetVariantString("!activator");
-        AcceptEntityInput(hint, "SetParent", target);
+        SetVariantString(sTargetName);
+        AcceptEntityInput(hint, "SetParent");
         AcceptEntityInput(hint, "ShowHint");
         
         CreateTimer(1.1, Timer_KillEntity, EntIndexToEntRef(hint));
@@ -442,36 +429,26 @@ void ExplodeTrap(int target)
     }
 }
 
-// ==== THAY THẾ L4D_StaggerPlayer: Hệ thống Knockback vật lý ==== //
-void ApplyKnockback(int client, float pos[3])
+// ==== VSCRIPT STAGGER ====
+void ApplyStagger(int client, float pos[3])
 {
     if (client <= 0 || client > MaxClients || !IsClientInGame(client) || !IsPlayerAlive(client)) return;
     
-    float vClient[3], vDir[3];
-    GetClientAbsOrigin(client, vClient);
-    SubtractVectors(vClient, pos, vDir);
-    
-    // Nếu đứng trùng tâm nổ, tạo hướng đẩy ngẫu nhiên
-    if (GetVectorLength(vDir) < 1.0)
+    int logic = CreateEntityByName("logic_script");
+    if (logic != -1)
     {
-        vDir[0] = GetRandomFloat(-1.0, 1.0);
-        vDir[1] = GetRandomFloat(-1.0, 1.0);
+        DispatchSpawn(logic);
+        char code[256];
+        Format(code, sizeof(code), "local p = GetPlayerFromUserID(%d); if(p) p.Stagger(Vector(%.1f, %.1f, %.1f));", GetClientUserId(client), pos[0], pos[1], pos[2]);
+        SetVariantString(code);
+        AcceptEntityInput(logic, "RunScriptCode");
+        AcceptEntityInput(logic, "Kill");
     }
-    
-    vDir[2] = 0.0;
-    NormalizeVector(vDir, vDir);
-    ScaleVector(vDir, 250.0); // Lực đẩy văng ra xa
-    vDir[2] = 150.0;          // Lực hất lên không trung
-    
-    // Set MoveType thành Walk để nạn nhân bị hất văng (bypass anti-bhop)
-    SetEntityMoveType(client, MOVETYPE_WALK);
-    TeleportEntity(client, NULL_VECTOR, NULL_VECTOR, vDir);
 }
 
 void ApplyChainStagger(int victim, int owner, float pos[3], float duration)
 {
-    // Gọi hàm Knockback vật lý thay thế Stagger
-    ApplyKnockback(victim, pos);
+    ApplyStagger(victim, pos);
     
     if (duration > 2.0)
     {
@@ -612,7 +589,7 @@ void ExecuteMolotovEffect(float pos[3], int target, int owner)
             DispatchSpawn(gascan);
             SetEntData(gascan, GetEntSendPropOffs(gascan, "m_CollisionGroup"), 1, 1, true); 
             TeleportEntity(gascan, gPos, NULL_VECTOR, NULL_VECTOR);
-            AcceptEntityInput(gascan, "break");
+            AcceptEntityInput(gascan, "break"); 
         }
     }
     TagTrapInflictor(pos, TYPE_MOLOTOV); 
@@ -772,103 +749,154 @@ bool GetGroundPosition(float pos[3], float groundPos[3])
     return hit;
 }
 
+// ==== VOMIT TRAP FIX: ZSPAWN SCANNER VỚI CELL DATA ==== //
 void ExecuteVomitjarEffect(float pos[3], int owner)
 {
-    int attacker = owner;
-    if (attacker <= 0 || !IsClientInGame(attacker))
-    {
-        attacker = 0;
-        for (int i = 1; i <= MaxClients; i++) 
-            if (IsClientInGame(i)) { attacker = i; break; }
-    }
-    
-    float vEnd[3];
+    // 1. VSCRIPT STAGGER
     for (int i = 1; i <= MaxClients; i++)
     {
         if (IsClientInGame(i) && GetClientTeam(i) == 2 && IsPlayerAlive(i))
         {
+            float vEnd[3];
             GetClientAbsOrigin(i, vEnd);
             if (GetVectorDistance(pos, vEnd) <= g_cvVomitRadius.FloatValue)
             {
-                if (g_hVomitOnPlayer != null && attacker > 0)
-                {
-                    SDKCall(g_hVomitOnPlayer, i, attacker, true);
-                    ApplyKnockback(i, pos); // Gọi Knockback thay cho L4D_StaggerPlayer
-                }
+                ApplyStagger(i, pos);
             }
         }
     }
-    
-    int puke = CreateEntityByName("vomitjar_projectile");
-    if (puke != -1)
+
+    // 2. ÉP ENGINE L4D2 ĐẺ MỘT CON BOOMER TỪ VSCRIPT
+    int logicBoomer = CreateEntityByName("logic_script");
+    if (logicBoomer != -1)
     {
-        DispatchSpawn(puke);
-        TeleportEntity(puke, pos, NULL_VECTOR, NULL_VECTOR);
-        AcceptEntityInput(puke, "Break"); 
+        DispatchSpawn(logicBoomer);
+        char code[256];
+        Format(code, sizeof(code), "ZSpawn({type=2, pos=Vector(%.1f, %.1f, %.1f)});", pos[0], pos[1], pos[2] + 20.0);
+        SetVariantString(code);
+        AcceptEntityInput(logicBoomer, "RunScriptCode");
+        AcceptEntityInput(logicBoomer, "Kill");
     }
+
+    // 3. KHỞI TẠO RADAR QUÉT TÌM CON BOOMER VỪA ĐẺ
+    DataPack bPack;
+    CreateDataTimer(0.1, Timer_FindAndDetonateBoomer, bPack, TIMER_FLAG_NO_MAPCHANGE);
+    bPack.WriteFloat(pos[0]);
+    bPack.WriteFloat(pos[1]);
+    bPack.WriteFloat(pos[2] + 20.0);
+    bPack.WriteCell(GetClientUserId(owner));
+    bPack.WriteCell(0); // LƯU Ý: Đã sửa thành WriteCell
+
     EmitSoundToAll("player/boomer/explode/exp_boomer.wav", SOUND_FROM_WORLD, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 1.0, SNDPITCH_NORMAL, -1, pos);
     
+    // 4. DROPSPIT VSCRIPT
     float groundPos[3];
     GetGroundPosition(pos, groundPos);
     
-    float offsets[3][2] = { {30.0, 0.0}, {-15.0, 25.98}, {-15.0, -25.98} };
     float scale = g_cvVomitAcidScale.FloatValue;
     int repeat = RoundToNearest(scale);
     if (repeat < 1) repeat = 1;
     if (repeat > 5) repeat = 5;
 
+    float offsets[5][2] = { {0.0, 0.0}, {40.0, 0.0}, {-20.0, 34.6}, {-20.0, -34.6}, {0.0, -40.0} };
+
     for (int r = 0; r < repeat; r++)
     {
-        for (int i = 0; i < 3; i++)
+        float spitPos[3];
+        spitPos = groundPos;
+        
+        if (r < 5)
         {
-            float checkPos[3];
-            checkPos[0] = groundPos[0] + offsets[i][0];
-            checkPos[1] = groundPos[1] + offsets[i][1];
-            checkPos[2] = groundPos[2] + 15.0; 
-            
-            if (scale > 1.5 && r > 0) 
-            {
-                float angle = float(r) * (360.0 / repeat);
-                checkPos[0] += Cosine(DegToRad(angle)) * 20.0;
-                checkPos[1] += Sine(DegToRad(angle)) * 20.0;
-            }
-            
-            Handle trace = TR_TraceRayFilterEx(groundPos, checkPos, MASK_SOLID, RayType_EndPoint, TraceFilter_IgnorePlayers);
-            if (TR_DidHit(trace))
-            {
-                TR_GetEndPosition(checkPos, trace);
-                float dir[3];
-                SubtractVectors(groundPos, checkPos, dir);
-                NormalizeVector(dir, dir);
-                ScaleVector(dir, 15.0); 
-                AddVectors(checkPos, dir, checkPos);
-            }
-            CloseHandle(trace);
-            
-            // L4D2_SpitterPrj đã được xóa bỏ để giải phóng left4dhooks
-            // Việc tạo vũng acid được xử lý thuần túy bằng code dưới đây
-            int spit = CreateEntityByName("spitter_projectile");
-            if (spit > MaxClients && IsValidEntity(spit))
-            {
-                if (owner > 0) SetEntPropEnt(spit, Prop_Send, "m_hOwnerEntity", owner);
-                DispatchSpawn(spit);
-                TeleportEntity(spit, checkPos, NULL_VECTOR, NULL_VECTOR);
-                if (g_hSpitterDetonate != null) SDKCall(g_hSpitterDetonate, spit);
-                else AcceptEntityInput(spit, "Kill"); 
-            }
+            spitPos[0] += offsets[r][0];
+            spitPos[1] += offsets[r][1];
+        }
 
-            int swarm = CreateEntityByName("insect_swarm");
-            if (swarm > MaxClients && IsValidEntity(swarm))
-            {
-                if (owner > 0) SetEntPropEnt(swarm, Prop_Send, "m_hOwnerEntity", owner);
-                DispatchSpawn(swarm);
-                TeleportEntity(swarm, checkPos, NULL_VECTOR, NULL_VECTOR);
-                AcceptEntityInput(swarm, "Start");
-            }
+        int logicSpit = CreateEntityByName("logic_script");
+        if (logicSpit != -1)
+        {
+            DispatchSpawn(logicSpit);
+            char spitCode[128];
+            Format(spitCode, sizeof(spitCode), "DropSpit(Vector(%.1f, %.1f, %.1f));", spitPos[0], spitPos[1], spitPos[2]);
+            SetVariantString(spitCode);
+            AcceptEntityInput(logicSpit, "RunScriptCode");
+            AcceptEntityInput(logicSpit, "Kill");
         }
     }
     
-    TagTrapInflictor(pos, TYPE_VOMIT);
+    int swarm = CreateEntityByName("insect_swarm");
+    if (swarm > MaxClients && IsValidEntity(swarm))
+    {
+        if (owner > 0) SetEntPropEnt(swarm, Prop_Send, "m_hOwnerEntity", owner);
+        DispatchSpawn(swarm);
+        TeleportEntity(swarm, groundPos, NULL_VECTOR, NULL_VECTOR);
+        AcceptEntityInput(swarm, "Start");
+    }
+    
+    TagTrapInflictor(groundPos, TYPE_VOMIT);
+}
+
+// Radar tìm và ép nổ Boomer
+public Action Timer_FindAndDetonateBoomer(Handle timer, DataPack pack)
+{
+    pack.Reset();
+    float pos[3];
+    pos[0] = pack.ReadFloat();
+    pos[1] = pack.ReadFloat();
+    pos[2] = pack.ReadFloat();
+    int ownerUserId = pack.ReadCell();
+    int attempts = pack.ReadCell(); // LƯU Ý: Đã sửa thành ReadCell
+
+    if (attempts >= 10) return Plugin_Stop; 
+
+    bool found = false;
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && IsPlayerAlive(i) && IsFakeClient(i) && GetClientTeam(i) == 3 && GetEntProp(i, Prop_Send, "m_zombieClass") == 2)
+        {
+            float bPos[3];
+            GetClientAbsOrigin(i, bPos);
+            if (GetVectorDistance(pos, bPos) < 200.0) 
+            {
+                int owner = GetClientOfUserId(ownerUserId);
+
+                SetEntityRenderMode(i, RENDER_NONE);
+
+                if (owner > 0 && IsClientInGame(owner))
+                {
+                    SDKHooks_TakeDamage(i, owner, owner, 1000.0, 64);
+                }
+                ForcePlayerSuicide(i); 
+
+                CreateTimer(0.1, Timer_KickFakeClient, GetClientUserId(i));
+                
+                found = true;
+                break; 
+            }
+        }
+    }
+
+    if (!found)
+    {
+        DataPack newPack;
+        CreateDataTimer(0.1, Timer_FindAndDetonateBoomer, newPack, TIMER_FLAG_NO_MAPCHANGE);
+        newPack.WriteFloat(pos[0]);
+        newPack.WriteFloat(pos[1]);
+        newPack.WriteFloat(pos[2]);
+        newPack.WriteCell(ownerUserId);
+        newPack.WriteCell(attempts + 1); // LƯU Ý: Đã sửa thành WriteCell
+    }
+
+    return Plugin_Stop;
+}
+
+public Action Timer_KickFakeClient(Handle timer, int userid)
+{
+    int client = GetClientOfUserId(userid);
+    if (client > 0 && IsClientInGame(client) && IsFakeClient(client))
+    {
+        KickClient(client);
+    }
+    return Plugin_Stop;
 }
 
 void TagTrapInflictor(float pos[3], TrapType type)
@@ -901,7 +929,7 @@ public Action Timer_TagInflictor(Handle timer, Handle pack)
     }
     else if (type == TYPE_VOMIT)
     {
-        strcopy(classname, sizeof(classname), "insect_swarm");
+        strcopy(classname, sizeof(classname), "insect_swarm"); 
         radius = 350.0; 
         duration = g_cvVomitDuration.FloatValue;
     }
