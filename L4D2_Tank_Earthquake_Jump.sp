@@ -27,7 +27,7 @@
 public Plugin myinfo =
 {
 	name = "[L4D2] Tank Earthquake Jump",
-	author = "Tyn Zu (Phục hồi & Tối ưu)",
+	author = "Tyn Zũ",
 	description = "Tank nhảy cao, lao vào Survivor, tạo động đất gây sát thương, đẩy văng, rung màn hình và làm chậm thời gian",
 	version = "2.1.0",
 	url = ""
