@@ -28,8 +28,8 @@ public Plugin myinfo =
     name = "Body Trap Advanced",
     author = "Tyn Zũ",
     description = "Use Molotov, PipeBomb, Vomitjar to set traps",
-    version = "27.0",
-    url = ""
+    version = "2.7",
+    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/l4d2_bodytrap.sp"
 };
 
 // CVar Core
