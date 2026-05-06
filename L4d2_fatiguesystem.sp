@@ -80,7 +80,7 @@ public Plugin myinfo =
     author = "Tyn Zũ",
     description = "Stamina & Fatigue for movement, melee, and shove.",
     version = "3.1.0",
-    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/"
+    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4d2_fatiguesystem.sp"
 };
 
 // ========================================================
