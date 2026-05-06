@@ -96,8 +96,8 @@ public Plugin myinfo =
     name        = "L4D2 Selfkill Ultimate",
     author      = "Tyn Zũ",
     description = "Tự sát siêu nổ 5x, 1 lần/map",
-    version     = "10.4",
-    url         = ""
+    version     = "2.4",
+    url         = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/l4d2_selfkill_ultimate.sp"
 };
 
 public void OnMapStart()
