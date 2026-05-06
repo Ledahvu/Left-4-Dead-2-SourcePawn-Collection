@@ -103,7 +103,7 @@ public Plugin myinfo =
 	author = "Tyn Zũ",
 	description = "100% no friendly fire/knockback, close-range scavenge, fully optimized.",
 	version = PLUGIN_VERSION,
-	url = ""
+	url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/Dummy%20Bot%20Pet%20-%20Absolute%20Loyalty.sp"
 };
 
 public void OnPluginStart()
