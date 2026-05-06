@@ -233,7 +233,7 @@ public Action OnWeaponReload(int weapon) {
     char classname[64]; GetEdictClassname(weapon, classname, sizeof(classname));
 
     // -------------------------------------------------------------------------
-    // 1. SHOTGUN (THỦ THUẬT ĐÁNH LỪA ENGINE TỨC THÌ ĐÃ ĐƯỢC PHỤC HỒI)
+    // 1. SHOTGUN (THỦ THUẬT ĐÁNH LỪA ENGINE TỨC THÌ)
     // -------------------------------------------------------------------------
     if (g_cvShotgunClipReload.BoolValue && (StrContains(classname, "shotgun") != -1 || StrContains(classname, "spas") != -1)) {
         int maxClip = 8;
@@ -261,7 +261,7 @@ public Action OnWeaponReload(int weapon) {
     }
     
     // -------------------------------------------------------------------------
-    // 2. PHÂN LOẠI SÚNG TRƯỜNG & SÚNG LỤC (GIỮ NGUYÊN BẢN V13.7 HOÀN HẢO)
+    // 2. PHÂN LOẠI SÚNG TRƯỜNG & SÚNG LỤC
     // -------------------------------------------------------------------------
     if (g_cvSingleReloadEnable.BoolValue) {
         bool bShouldSingleReload = false; 
