@@ -32,7 +32,7 @@ public Plugin myinfo =
     author      = "Tyn Zũ",
     description = "Sử dụng cola để heal",
     version     = "2.1",
-    url         = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/"
+    url         = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/l4d2_cola_prop_heal.sp"
 };
 
 ConVar g_cvMaxPacks;
