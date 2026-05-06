@@ -52,7 +52,7 @@ public Plugin myinfo = {
     author = "Tyn Zũ",
     description = "Gun clip reload, reload speed, and overheat mechanics.",
     version = PLUGIN_VERSION,
-    url = ""
+    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4D2_Weapon_Mechanics.sp"
 };
 
 public void OnPluginStart() {
