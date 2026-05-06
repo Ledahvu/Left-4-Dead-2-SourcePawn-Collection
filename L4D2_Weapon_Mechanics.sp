@@ -19,7 +19,7 @@
 #include <sdktools>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "3.0"
+#define PLUGIN_VERSION "3.9"
 
 // --- CVARS ---
 ConVar g_cvEnable, g_cvReloadSpeedMulti;
@@ -41,6 +41,7 @@ bool g_bIsReloading[MAXPLAYERS + 1];
 int g_iReloadingWeapon[MAXPLAYERS + 1];
 int g_iShadowClip[MAXPLAYERS + 1]; 
 Handle g_hSingleReloadTimer[MAXPLAYERS + 1];
+bool g_bRequireNewClick[MAXPLAYERS + 1]; // Cờ yêu cầu người chơi thả chuột trái
 
 // Âm thanh
 #define SOUND_BREAK_WOOD "physics/wood/wood_plank_break1.wav"
@@ -52,7 +53,7 @@ public Plugin myinfo = {
     author = "Tyn Zũ",
     description = "Gun clip reload, reload speed, and overheat mechanics.",
     version = PLUGIN_VERSION,
-    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4D2_Weapon_Mechanics.sp"
+    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/edit/main/L4D2_Weapon_Mechanics.sp"
 };
 
 public void OnPluginStart() {
@@ -80,7 +81,7 @@ public void OnPluginStart() {
     g_cvSingleReloadRifle = CreateConVar("sm_cwm_single_rifle", "1", "");
     g_cvSingleReloadSniper = CreateConVar("sm_cwm_single_sniper", "1", "");
 
-    AutoExecConfig(true, "l4d2_weapons_mechanics");
+    AutoExecConfig(true, "l4d2_custom_weapons");
 
     HookEvent("weapon_fire", Event_WeaponFire);
     HookEvent("infected_hurt", Event_InfectedHurt);
@@ -176,7 +177,7 @@ public Action Timer_NaturalCooldown(Handle timer) {
 }
 
 // ====================================================================================
-// ĐIỀU KHIỂN NÚT BẤM (GẠT TAY ENGINE VÀ HỦY NẠP ĐẠN)
+// ĐIỀU KHIỂN NÚT BẤM (ÉP THẢ CHUỘT VÀ HỦY NẠP ĐẠN)
 // ====================================================================================
 public Action OnPlayerRunCmd(int client, int &buttons) {
     if (!IsClientInGame(client) || !IsPlayerAlive(client)) return Plugin_Continue;
@@ -185,6 +186,15 @@ public Action OnPlayerRunCmd(int client, int &buttons) {
         if (buttons & IN_ATTACK) buttons &= ~IN_ATTACK;
         if (buttons & IN_ATTACK2) buttons &= ~IN_ATTACK2;
         return Plugin_Continue;
+    }
+
+    // --- CƠ CHẾ MỚI: ÉP THẢ CHUỘT TRÁI KHI THAY ĐẠN ---
+    if (g_bRequireNewClick[client]) {
+        if (buttons & IN_ATTACK) {
+            buttons &= ~IN_ATTACK; // Ngắt tín hiệu bắn
+        } else {
+            g_bRequireNewClick[client] = false; // Người chơi đã thả chuột, cho phép bắn lại
+        }
     }
 
     if (g_bIsReloading[client]) {
@@ -233,7 +243,7 @@ public Action OnWeaponReload(int weapon) {
     char classname[64]; GetEdictClassname(weapon, classname, sizeof(classname));
 
     // -------------------------------------------------------------------------
-    // 1. SHOTGUN (THỦ THUẬT ĐÁNH LỪA ENGINE TỨC THÌ)
+    // 1. SHOTGUN (Đánh lừa Engine)
     // -------------------------------------------------------------------------
     if (g_cvShotgunClipReload.BoolValue && (StrContains(classname, "shotgun") != -1 || StrContains(classname, "spas") != -1)) {
         int maxClip = 8;
@@ -246,12 +256,12 @@ public Action OnWeaponReload(int weapon) {
         int reserve = GetWeaponAmmo(client, weapon);
         if (current >= maxClip || reserve <= 0) return Plugin_Continue;
 
+        // Bắt buộc thả chuột nếu đang đè bắn
+        g_bRequireNewClick[client] = true;
+
         int totalAmmo = current + reserve;
         int targetClip = (totalAmmo >= maxClip) ? maxClip : totalAmmo;
 
-        // Bơm đạn lên Max - 1. Nếu cần nạp nhiều hơn 1 viên, plugin sẽ bơm sẵn.
-        // Engine sẽ nhận ra chỉ còn thiếu đúng 1 viên đạn.
-        // Nó sẽ chạy animation nạp 1 viên cuối cùng rồi KÉO NÒNG BẮN mượt mà.
         if (targetClip > current + 1) {
             SetEntProp(weapon, Prop_Send, "m_iClip1", targetClip - 1);
             SetWeaponAmmo(client, weapon, totalAmmo - (targetClip - 1));
@@ -309,6 +319,9 @@ public Action OnWeaponReload(int weapon) {
             if (current >= maxClip) return Plugin_Handled; 
             int reserve = GetWeaponAmmo(client, weapon);
             if (reserve <= 0 && !isPistolClass) return Plugin_Handled;
+
+            // Bắt buộc thả chuột nếu đang đè bắn
+            g_bRequireNewClick[client] = true;
 
             g_bIsReloading[client] = true; 
             g_iReloadingWeapon[client] = weapon;
