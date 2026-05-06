@@ -21,7 +21,7 @@
 #include <sdktools>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "46.0_AbsoluteLoyalty"
+#define PLUGIN_VERSION "4.6_AbsoluteLoyalty"
 //#define FL_NOTARGET (1 << 0)
 #define MAX_MEMORY_NODES 2000
 
