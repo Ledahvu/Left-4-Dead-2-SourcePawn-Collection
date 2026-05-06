@@ -51,9 +51,9 @@ bool g_bRequireNewClick[MAXPLAYERS + 1]; // Cờ ép thả chuột trái
 public Plugin myinfo = {
     name = "L4D2 Ultimate Weapon Mechanics",
     author = "Tyn Zũ",
-    description = "Fixed 49-50 Infinite Ammo Desync. Kept all V13.8 logics intact.",
+    description = "Gun clip reload, reload speed, and overheat mechanics.",
     version = PLUGIN_VERSION,
-    url = ""
+    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/edit/main/L4D2_Weapon_Mechanics.sp"
 };
 
 public void OnPluginStart() {
