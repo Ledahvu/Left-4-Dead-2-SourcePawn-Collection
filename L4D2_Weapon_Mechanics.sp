@@ -19,7 +19,7 @@
 #include <sdktools>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "3.9"
+#define PLUGIN_VERSION "14.0"
 
 // --- CVARS ---
 ConVar g_cvEnable, g_cvReloadSpeedMulti;
@@ -41,7 +41,7 @@ bool g_bIsReloading[MAXPLAYERS + 1];
 int g_iReloadingWeapon[MAXPLAYERS + 1];
 int g_iShadowClip[MAXPLAYERS + 1]; 
 Handle g_hSingleReloadTimer[MAXPLAYERS + 1];
-bool g_bRequireNewClick[MAXPLAYERS + 1]; // Cờ yêu cầu người chơi thả chuột trái
+bool g_bRequireNewClick[MAXPLAYERS + 1]; // Cờ ép thả chuột trái
 
 // Âm thanh
 #define SOUND_BREAK_WOOD "physics/wood/wood_plank_break1.wav"
@@ -51,9 +51,9 @@ bool g_bRequireNewClick[MAXPLAYERS + 1]; // Cờ yêu cầu người chơi thả
 public Plugin myinfo = {
     name = "L4D2 Ultimate Weapon Mechanics",
     author = "Tyn Zũ",
-    description = "Gun clip reload, reload speed, and overheat mechanics.",
+    description = "Fixed 49-50 Infinite Ammo Desync. Kept all V13.8 logics intact.",
     version = PLUGIN_VERSION,
-    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/edit/main/L4D2_Weapon_Mechanics.sp"
+    url = ""
 };
 
 public void OnPluginStart() {
@@ -177,7 +177,7 @@ public Action Timer_NaturalCooldown(Handle timer) {
 }
 
 // ====================================================================================
-// ĐIỀU KHIỂN NÚT BẤM (ÉP THẢ CHUỘT VÀ HỦY NẠP ĐẠN)
+// ĐIỀU KHIỂN NÚT BẤM (NGẮT CHUỘT TRÁI VÀ CHỐNG DESYNC)
 // ====================================================================================
 public Action OnPlayerRunCmd(int client, int &buttons) {
     if (!IsClientInGame(client) || !IsPlayerAlive(client)) return Plugin_Continue;
@@ -188,12 +188,22 @@ public Action OnPlayerRunCmd(int client, int &buttons) {
         return Plugin_Continue;
     }
 
-    // --- CƠ CHẾ MỚI: ÉP THẢ CHUỘT TRÁI KHI THAY ĐẠN ---
+    // --- CƠ CHẾ CHỐNG LỖI 49-50: ÉP THẢ CHUỘT TRÁI ---
     if (g_bRequireNewClick[client]) {
         if (buttons & IN_ATTACK) {
-            buttons &= ~IN_ATTACK; // Ngắt tín hiệu bắn
+            buttons &= ~IN_ATTACK; // Tước quyền bắn của Engine
+            
+            int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+            if (IsValidEntity(weapon)) {
+                // Khóa cứng thời gian bắn sang tương lai để Client ngừng nhảy đạn ảo
+                float nextAtt = GetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack");
+                if (nextAtt < GetGameTime() + 0.1) {
+                    SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", GetGameTime() + 0.1);
+                }
+            }
         } else {
-            g_bRequireNewClick[client] = false; // Người chơi đã thả chuột, cho phép bắn lại
+            // Ngay khi người chơi chịu nhấc ngón tay thả chuột ra
+            g_bRequireNewClick[client] = false; 
         }
     }
 
@@ -238,12 +248,15 @@ public Action OnWeaponReload(int weapon) {
     if (!g_cvEnable.BoolValue) return Plugin_Continue;
 
     int client = GetEntPropEnt(weapon, Prop_Send, "m_hOwnerEntity");
-    if (client <= 0 || !IsClientInGame(client) || g_bOverheated[client] || g_bIsReloading[client]) return Plugin_Continue;
+    if (client <= 0 || !IsClientInGame(client) || g_bOverheated[client]) return Plugin_Continue;
+
+    // NGĂN CHẶN SPAM R: Nếu đang thay đạn dở, chặn đứng Engine, không cho spam R tạo vòng lặp
+    if (g_bIsReloading[client]) return Plugin_Handled;
 
     char classname[64]; GetEdictClassname(weapon, classname, sizeof(classname));
 
     // -------------------------------------------------------------------------
-    // 1. SHOTGUN (Đánh lừa Engine)
+    // 1. SHOTGUN (THỦ THUẬT ĐÁNH LỪA ENGINE V13.6 ĐƯỢC GIỮ NGUYÊN)
     // -------------------------------------------------------------------------
     if (g_cvShotgunClipReload.BoolValue && (StrContains(classname, "shotgun") != -1 || StrContains(classname, "spas") != -1)) {
         int maxClip = 8;
@@ -256,8 +269,7 @@ public Action OnWeaponReload(int weapon) {
         int reserve = GetWeaponAmmo(client, weapon);
         if (current >= maxClip || reserve <= 0) return Plugin_Continue;
 
-        // Bắt buộc thả chuột nếu đang đè bắn
-        g_bRequireNewClick[client] = true;
+        g_bRequireNewClick[client] = true; // Kích hoạt cờ yêu cầu thả chuột
 
         int totalAmmo = current + reserve;
         int targetClip = (totalAmmo >= maxClip) ? maxClip : totalAmmo;
@@ -271,7 +283,7 @@ public Action OnWeaponReload(int weapon) {
     }
     
     // -------------------------------------------------------------------------
-    // 2. PHÂN LOẠI SÚNG TRƯỜNG & SÚNG LỤC
+    // 2. PHÂN LOẠI SÚNG TRƯỜNG & SÚNG LỤC (GIỮ NGUYÊN V13.8)
     // -------------------------------------------------------------------------
     if (g_cvSingleReloadEnable.BoolValue) {
         bool bShouldSingleReload = false; 
@@ -320,8 +332,7 @@ public Action OnWeaponReload(int weapon) {
             int reserve = GetWeaponAmmo(client, weapon);
             if (reserve <= 0 && !isPistolClass) return Plugin_Handled;
 
-            // Bắt buộc thả chuột nếu đang đè bắn
-            g_bRequireNewClick[client] = true;
+            g_bRequireNewClick[client] = true; // Kích hoạt cờ yêu cầu thả chuột
 
             g_bIsReloading[client] = true; 
             g_iReloadingWeapon[client] = weapon;
