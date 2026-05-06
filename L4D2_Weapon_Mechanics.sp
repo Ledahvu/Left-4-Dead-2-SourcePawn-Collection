@@ -19,7 +19,7 @@
 #include <sdktools>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "14.0"
+#define PLUGIN_VERSION "4.0"
 
 // --- CVARS ---
 ConVar g_cvEnable, g_cvReloadSpeedMulti;
