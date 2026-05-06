@@ -27,7 +27,7 @@ public Plugin myinfo =
 	author = "Tyn Zũ",
 	description = "Place multiple C4s, Crosshair Hint for Manual, Separate Countdown Hint",
 	version = "2.5.0",
-	url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection"
+	url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/l4d2_c4_ammobox.sp"
 };
 
 #define EXPLOSIVE_AMMO_ENTITY "upgrade_ammo_explosive"
