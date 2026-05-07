@@ -58,7 +58,7 @@ public Plugin myinfo = {
     name = "Auto Random Panic & Perfect SI Spawner",
     author = "Tyn Zũ",
     description = "Ngẫu nhiên gọi Panic, Tank và gọi Witch theo chu kỳ",
-    version = "2.2",
+    version = "2.3",
     url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4d2_Auto_Random_Panic_Event.sp"
 };
 
@@ -131,6 +131,8 @@ public void OnPluginStart()
     g_cvZCommonLimit      = FindConVar("z_common_limit");
     g_cvZMaxPlayerZombies = FindConVar("z_max_player_zombies");
 
+    // SỬA LỖI: Thêm hook cho sự kiện round_start
+    HookEvent("round_start", Event_RoundStart, EventHookMode_PostNoCopy);
     HookEvent("player_left_start_area", Event_PlayerLeftStartArea, EventHookMode_PostNoCopy);
     HookEvent("round_end", Event_RoundEnd, EventHookMode_PostNoCopy);
     HookEvent("map_transition", Event_RoundEnd, EventHookMode_PostNoCopy);
@@ -145,9 +147,23 @@ public void OnMapStart()
     g_bIsPanicActive = false;
     StopAllTimers();
     
+    // Chỉ lưu mặc định khi map mới hoàn toàn load xong
     if (g_cvZMegaMobSize != null)      g_iOldMegaMobSize = g_cvZMegaMobSize.IntValue;
     if (g_cvZCommonLimit != null)      g_iOldCommonLimit = g_cvZCommonLimit.IntValue;
     if (g_cvZMaxPlayerZombies != null) g_iOldMaxPlayerZombies = g_cvZMaxPlayerZombies.IntValue;
+}
+
+// SỬA LỖI: Hàm mới ép reset toàn bộ plugin mỗi khi Round vừa bắt đầu (kể cả do Admin restart)
+public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+{
+    g_bHasLeftStartArea = false;
+    g_bIsPanicActive = false;
+    StopAllTimers();
+    
+    // Trả lại limits nếu Admin restart map ngay lúc đang xảy ra Panic
+    if (g_cvZMegaMobSize != null && g_iOldMegaMobSize > 0)      g_cvZMegaMobSize.IntValue = g_iOldMegaMobSize;
+    if (g_cvZCommonLimit != null && g_iOldCommonLimit > 0)      g_cvZCommonLimit.IntValue = g_iOldCommonLimit;
+    if (g_cvZMaxPlayerZombies != null && g_iOldMaxPlayerZombies > 0) g_cvZMaxPlayerZombies.IntValue = g_iOldMaxPlayerZombies;
 }
 
 public void Event_PlayerLeftStartArea(Event event, const char[] name, bool dontBroadcast)
@@ -167,29 +183,26 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
     g_bHasLeftStartArea = false;
     g_bIsPanicActive = false;
     StopAllTimers();
+    
+    if (g_cvZMegaMobSize != null && g_iOldMegaMobSize > 0)      g_cvZMegaMobSize.IntValue = g_iOldMegaMobSize;
+    if (g_cvZCommonLimit != null && g_iOldCommonLimit > 0)      g_cvZCommonLimit.IntValue = g_iOldCommonLimit;
+    if (g_cvZMaxPlayerZombies != null && g_iOldMaxPlayerZombies > 0) g_cvZMaxPlayerZombies.IntValue = g_iOldMaxPlayerZombies;
 }
 
 // =========================================================
-// HÀM MỚI: CHẠY VSCRIPT NGẦM QUA ENTITY (FIX LỖI CONSOLE)
+// HÀM CHẠY VSCRIPT NGẦM QUA ENTITY
 // =========================================================
 void SpawnZombieVscript(int classID)
 {
     char code[64];
     Format(code, sizeof(code), "ZSpawn({type=%d})", classID);
 
-    // Tạo một Entity logic ẩn
     int entity = CreateEntityByName("logic_script");
     if (entity != -1)
     {
         DispatchSpawn(entity);
-        
-        // Đưa mã code vào Entity
         SetVariantString(code);
-        
-        // Ép Entity thực thi lệnh VScript thẳng vào lõi game
         AcceptEntityInput(entity, "RunScriptCode");
-        
-        // Dọn dẹp xóa Entity để tránh rác map
         AcceptEntityInput(entity, "Kill");
     }
 }
@@ -440,9 +453,9 @@ public Action Timer_RestoreLimits(Handle timer)
     g_hRestoreTimer = null;
     g_bIsPanicActive = false; 
 
-    if (g_cvZMegaMobSize != null)      g_cvZMegaMobSize.IntValue = g_iOldMegaMobSize;
-    if (g_cvZCommonLimit != null)      g_cvZCommonLimit.IntValue = g_iOldCommonLimit;
-    if (g_cvZMaxPlayerZombies != null) g_cvZMaxPlayerZombies.IntValue = g_iOldMaxPlayerZombies;
+    if (g_cvZMegaMobSize != null && g_iOldMegaMobSize > 0)      g_cvZMegaMobSize.IntValue = g_iOldMegaMobSize;
+    if (g_cvZCommonLimit != null && g_iOldCommonLimit > 0)      g_cvZCommonLimit.IntValue = g_iOldCommonLimit;
+    if (g_cvZMaxPlayerZombies != null && g_iOldMaxPlayerZombies > 0) g_cvZMaxPlayerZombies.IntValue = g_iOldMaxPlayerZombies;
 
     return Plugin_Stop;
 }
