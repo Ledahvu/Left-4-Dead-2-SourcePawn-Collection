@@ -115,7 +115,7 @@ public void OnTakeDamagePost(int victim, int attacker, int inflictor, float dama
     int zombieClass = GetEntProp(victim, Prop_Send, "m_zombieClass");
     if (IsClassEnabled(zombieClass)) {
         char sDisplayText[32];
-        Format(sDisplayText, sizeof(sDisplayText), "HP: %d", currentHealth);
+        Format(sDisplayText, sizeof(sDisplayText), "%d", currentHealth);
         RenderInstructorHint(victim, sDisplayText);
     }
 }
