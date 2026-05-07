@@ -1,10 +1,18 @@
-/*
- * Plugin: L4D2 Infected HUD - Senior Refactored Edition
- * Original Authors: MasterMind420, xZk
- * Refactored & Enhanced by: Tyn Zũ
- * Mô tả: Cấu trúc code tối ưu, Fix lỗi nháy vàng khi bị bắn. 
- * Nâng cấp dải màu cầu vồng 13 bước siêu mượt và đồng bộ (0.15s).
- */
+// <[L4D2] Super Infected Health HUD Hint> - <Hiển thị HUD Hint máu SI có màu rainbow>
+// Copyright (C) <2026> <Vũ Trường Tuyền>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -64,7 +72,7 @@ public Plugin myinfo = {
     author      = "Tyn Zũ",
     description = "Hiển thị HUD Hint máu SI có màu rainbow",
     version     = "3.0.2",
-    url         = ""
+    url         = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4D2_SI_Health_HUDHint.sp"
 };
 
 // ====================================================================================================
