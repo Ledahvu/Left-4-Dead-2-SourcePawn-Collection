@@ -58,8 +58,8 @@ public Plugin myinfo = {
     name = "Auto Random Panic & Perfect SI Spawner",
     author = "Tyn Zũ",
     description = "Ngẫu nhiên gọi Panic, Tank và gọi Witch theo chu kỳ",
-    version = "2.1",
-    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4d2_Auto_Random_Panic_Event.sp"
+    version = "2.2",
+    url = ""
 };
 
 public void OnPluginStart()
@@ -83,7 +83,6 @@ public void OnPluginStart()
     g_cvSIAutoEnable = CreateConVar("sm_autosi_enable", "1", "Bật sinh SI liên tục ngoài Panic");
     g_cvSIAutoTime   = CreateConVar("sm_autosi_time", "15.0", "Thời gian cực ngắn gọi SI (giây)");
 
-    // Cvar cấu hình khoảng cách (Mặc định gốc của game là 250, mình nâng lên 600 để bao xa)
     g_cvSafeDist    = CreateConVar("sm_autopanic_safe_dist", "600", "Khoảng cách an toàn tối thiểu giữa quái spawn và người chơi");
 
     g_cvCIHealth    = CreateConVar("sm_stat_ci_hp", "50");
@@ -171,18 +170,28 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 }
 
 // =========================================================
-// HỆ THỐNG GỌI QUÁI BẰNG VSCRIPT (HOÀN HẢO TẦM NHÌN)
+// HÀM MỚI: CHẠY VSCRIPT NGẦM QUA ENTITY (FIX LỖI CONSOLE)
 // =========================================================
 void SpawnZombieVscript(int classID)
 {
-    // Lột cờ cheat của hệ thống script máy chủ
-    int flags = GetCommandFlags("script");
-    SetCommandFlags("script", flags & ~FCVAR_CHEAT);
-    
-    // Gọi lệnh VScript nội bộ ZSpawn (tự động check góc khuất của cả 4 người)
-    ServerCommand("script ZSpawn({type=%d})", classID);
-    
-    SetCommandFlags("script", flags | FCVAR_CHEAT);
+    char code[64];
+    Format(code, sizeof(code), "ZSpawn({type=%d})", classID);
+
+    // Tạo một Entity logic ẩn
+    int entity = CreateEntityByName("logic_script");
+    if (entity != -1)
+    {
+        DispatchSpawn(entity);
+        
+        // Đưa mã code vào Entity
+        SetVariantString(code);
+        
+        // Ép Entity thực thi lệnh VScript thẳng vào lõi game
+        AcceptEntityInput(entity, "RunScriptCode");
+        
+        // Dọn dẹp xóa Entity để tránh rác map
+        AcceptEntityInput(entity, "Kill");
+    }
 }
 
 // =========================================================
@@ -226,16 +235,13 @@ void SetGameCvarInt(const char[] name, int value)
 
 void ApplyHealthAndSpeed()
 {
-    // Ép khoảng cách an toàn. Game mặc định là 250, mình ép theo Cvar (600)
     SetGameCvarInt("z_safe_spawn_range", g_cvSafeDist.IntValue);
-
     SetGameCvarInt("z_health", g_cvCIHealth.IntValue);
     SetGameCvarInt("z_speed", g_cvCISpeed.IntValue);
     SetGameCvarInt("z_tank_health", g_cvTankHealth.IntValue);
     SetGameCvarInt("z_tank_speed", g_cvTankSpeed.IntValue);
     SetGameCvarInt("z_witch_health", g_cvWitchHealth.IntValue);
     SetGameCvarInt("z_witch_speed", g_cvWitchSpeed.IntValue);
-    
     SetGameCvarInt("z_hunter_health", g_cvHunterHP.IntValue);
     SetGameCvarInt("z_hunter_speed", g_cvHunterSpeed.IntValue);
     SetGameCvarInt("z_gas_health", g_cvSmokerHP.IntValue);       
@@ -268,7 +274,6 @@ public Action Timer_SpawnSI(Handle timer)
 
     if (CountAliveSI() < limit)
     {
-        // 1=Smoker, 2=Boomer, 3=Hunter, 4=Spitter, 5=Jockey, 6=Charger
         int siClasses[] = {1, 2, 3, 4, 5, 6};
         int randomIdx = GetRandomInt(0, 5);
         SpawnZombieVscript(siClasses[randomIdx]);
@@ -314,7 +319,7 @@ public Action Timer_SpawnTank(Handle timer)
     g_hTankTimer = null;
     if (!g_cvTankEnable.BoolValue) return Plugin_Stop;
 
-    SpawnZombieVscript(8); // Type 8 = Tank
+    SpawnZombieVscript(8); 
     if (g_cvChatEnable.BoolValue) {
         PrintToChatAll("\x04[Director] \x01Cảnh báo! Một con Tank đã xuất hiện chặn đường!");
     }
@@ -332,7 +337,7 @@ public Action Timer_SpawnWitch(Handle timer)
     g_hWitchTimer = null;
     if (!g_cvWitchEnable.BoolValue) return Plugin_Stop;
 
-    SpawnZombieVscript(7); // Type 7 = Witch
+    SpawnZombieVscript(7); 
     if (g_cvChatEnable.BoolValue) {
         PrintToChatAll("\x04[Director] \x01Bạn có nghe thấy tiếng khóc của Witch không?");
     }
