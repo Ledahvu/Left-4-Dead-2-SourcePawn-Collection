@@ -33,7 +33,8 @@ ConVar g_cvWitchEnable, g_cvWitchTime;
 // --- CVAR SI AUTO SPAWN ---
 ConVar g_cvSIAutoEnable, g_cvSIAutoTime;
 
-// --- CVAR STATS ---
+// --- CVAR STATS & KHOẢNG CÁCH ---
+ConVar g_cvSafeDist;
 ConVar g_cvCIHealth, g_cvCISpeed, g_cvTankHealth, g_cvTankSpeed, g_cvWitchHealth, g_cvWitchSpeed;
 ConVar g_cvHunterHP, g_cvHunterSpeed, g_cvSmokerHP, g_cvSmokerSpeed, g_cvBoomerHP, g_cvBoomerSpeed;
 ConVar g_cvSpitterHP, g_cvSpitterSpeed, g_cvJockeyHP, g_cvJockeySpeed, g_cvChargerHP, g_cvChargerSpeed;
@@ -47,42 +48,43 @@ Handle g_hRestoreTimer = null;
 Handle g_hTankTimer = null;
 Handle g_hWitchTimer = null;
 Handle g_hSITimer = null;
-Handle g_hCountdownTimer = null; // Timer chạy mỗi giây để cập nhật số
+Handle g_hCountdownTimer = null; 
 
-float g_fTimeRemaining = 0.0;    // Lưu số giây đếm ngược
+float g_fTimeRemaining = 0.0;    
 bool g_bHasLeftStartArea = false;
 bool g_bIsPanicActive = false; 
 
 public Plugin myinfo = {
-    name = "Auto Random Panic & Full Boss/SI Stats",
+    name = "Auto Random Panic & Perfect SI Spawner",
     author = "Tyn Zũ",
     description = "Ngẫu nhiên gọi Panic, Tank và gọi Witch theo chu kỳ",
-    version = "2.0",
+    version = "2.1",
     url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4d2_Auto_Random_Panic_Event.sp"
 };
 
 public void OnPluginStart()
 {
-    // Cvar hiển thị
     g_cvChatEnable = CreateConVar("sm_autopanic_chat_enable", "1", "Bật/Tắt thông báo Chat");
     g_cvHintEnable = CreateConVar("sm_autopanic_hint_enable", "1", "Bật/Tắt đếm ngược trên màn hình (Hint)");
 
-    // Thời gian đã được giảm xuống để quái ra liên tục (15 - 30 giây)
     g_cvEnable   = CreateConVar("sm_autopanic_enable", "1", "Bật/Tắt plugin (1=Bật, 0=Tắt)");
     g_cvMinTime  = CreateConVar("sm_autopanic_min", "15.0", "Thời gian xả hơi TỐI THIỂU");
     g_cvMaxTime  = CreateConVar("sm_autopanic_max", "30.0", "Thời gian xả hơi TỐI ĐA");
     g_cvDuration = CreateConVar("sm_autopanic_duration", "45.0", "Thời gian kéo dài Panic");
-    g_cvCICount  = CreateConVar("sm_autopanic_ci_count", "60", "Tổng số CI sinh ra trong đợt Panic");
-    g_cvSICount  = CreateConVar("sm_autopanic_si_count", "8", "Số lượng SI tối đa xuất hiện trong đợt Panic");
+    g_cvCICount  = CreateConVar("sm_autopanic_ci_count", "50", "Tổng số CI sinh ra trong đợt Panic");
+    g_cvSICount  = CreateConVar("sm_autopanic_si_count", "6", "Số lượng SI tối đa xuất hiện trong đợt Panic");
 
     g_cvTankEnable  = CreateConVar("sm_autotank_enable", "1", "Bật tự động gọi Tank ngẫu nhiên");
-    g_cvTankMinTime = CreateConVar("sm_autotank_min", "120.0", "Chờ Tank TỐI THIỂU (giây)");
-    g_cvTankMaxTime = CreateConVar("sm_autotank_max", "240.0", "Chờ Tank TỐI ĐA (giây)");
+    g_cvTankMinTime = CreateConVar("sm_autotank_min", "180.0", "Chờ Tank TỐI THIỂU (giây)");
+    g_cvTankMaxTime = CreateConVar("sm_autotank_max", "420.0", "Chờ Tank TỐI ĐA (giây)");
     g_cvWitchEnable = CreateConVar("sm_autowitch_enable", "1", "Bật tự động gọi Witch");
     g_cvWitchTime   = CreateConVar("sm_autowitch_time", "60.0", "Chu kỳ xuất hiện Witch (giây)");
 
     g_cvSIAutoEnable = CreateConVar("sm_autosi_enable", "1", "Bật sinh SI liên tục ngoài Panic");
     g_cvSIAutoTime   = CreateConVar("sm_autosi_time", "15.0", "Thời gian cực ngắn gọi SI (giây)");
+
+    // Cvar cấu hình khoảng cách (Mặc định gốc của game là 250, mình nâng lên 600 để bao xa)
+    g_cvSafeDist    = CreateConVar("sm_autopanic_safe_dist", "600", "Khoảng cách an toàn tối thiểu giữa quái spawn và người chơi");
 
     g_cvCIHealth    = CreateConVar("sm_stat_ci_hp", "50");
     g_cvCISpeed     = CreateConVar("sm_stat_ci_speed", "250");
@@ -104,6 +106,7 @@ public void OnPluginStart()
     g_cvChargerHP    = CreateConVar("sm_stat_charger_hp", "600");
     g_cvChargerSpeed = CreateConVar("sm_stat_charger_speed", "250");
 
+    HookConVarChange(g_cvSafeDist, OnStatCvarChanged);
     HookConVarChange(g_cvCIHealth, OnStatCvarChanged);
     HookConVarChange(g_cvCISpeed, OnStatCvarChanged);
     HookConVarChange(g_cvTankHealth, OnStatCvarChanged);
@@ -168,7 +171,22 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 }
 
 // =========================================================
-// HÀM CHEAT COMMAND ĐƯỢC CẤP BỞI NGƯỜI DÙNG
+// HỆ THỐNG GỌI QUÁI BẰNG VSCRIPT (HOÀN HẢO TẦM NHÌN)
+// =========================================================
+void SpawnZombieVscript(int classID)
+{
+    // Lột cờ cheat của hệ thống script máy chủ
+    int flags = GetCommandFlags("script");
+    SetCommandFlags("script", flags & ~FCVAR_CHEAT);
+    
+    // Gọi lệnh VScript nội bộ ZSpawn (tự động check góc khuất của cả 4 người)
+    ServerCommand("script ZSpawn({type=%d})", classID);
+    
+    SetCommandFlags("script", flags | FCVAR_CHEAT);
+}
+
+// =========================================================
+// HÀM CHEAT COMMAND (Chỉ dùng cho Panic Event)
 // =========================================================
 int GetSurvivorClient()
 {
@@ -197,19 +215,8 @@ void CheatCommand(int client, const char[] command, const char[] arguments = "")
     SetCommandFlags(command, flags | FCVAR_CHEAT);
 }
 
-void SpawnZombieAuto(const char[] classname)
-{
-    int client = GetSurvivorClient();
-    if (client > 0)
-    {
-        char args[32];
-        Format(args, sizeof(args), "%s auto", classname);
-        CheatCommand(client, "z_spawn", args);
-    }
-}
-
 // =========================================================
-// HỆ THỐNG MÁU VÀ TỐC ĐỘ 
+// HỆ THỐNG MÁU, TỐC ĐỘ VÀ KHOẢNG CÁCH NÚP
 // =========================================================
 void SetGameCvarInt(const char[] name, int value)
 {
@@ -219,6 +226,9 @@ void SetGameCvarInt(const char[] name, int value)
 
 void ApplyHealthAndSpeed()
 {
+    // Ép khoảng cách an toàn. Game mặc định là 250, mình ép theo Cvar (600)
+    SetGameCvarInt("z_safe_spawn_range", g_cvSafeDist.IntValue);
+
     SetGameCvarInt("z_health", g_cvCIHealth.IntValue);
     SetGameCvarInt("z_speed", g_cvCISpeed.IntValue);
     SetGameCvarInt("z_tank_health", g_cvTankHealth.IntValue);
@@ -258,9 +268,10 @@ public Action Timer_SpawnSI(Handle timer)
 
     if (CountAliveSI() < limit)
     {
-        char siClasses[6][] = {"smoker", "boomer", "hunter", "spitter", "jockey", "charger"};
+        // 1=Smoker, 2=Boomer, 3=Hunter, 4=Spitter, 5=Jockey, 6=Charger
+        int siClasses[] = {1, 2, 3, 4, 5, 6};
         int randomIdx = GetRandomInt(0, 5);
-        SpawnZombieAuto(siClasses[randomIdx]);
+        SpawnZombieVscript(siClasses[randomIdx]);
     }
     return Plugin_Continue;
 }
@@ -303,7 +314,7 @@ public Action Timer_SpawnTank(Handle timer)
     g_hTankTimer = null;
     if (!g_cvTankEnable.BoolValue) return Plugin_Stop;
 
-    SpawnZombieAuto("tank");
+    SpawnZombieVscript(8); // Type 8 = Tank
     if (g_cvChatEnable.BoolValue) {
         PrintToChatAll("\x04[Director] \x01Cảnh báo! Một con Tank đã xuất hiện chặn đường!");
     }
@@ -321,7 +332,7 @@ public Action Timer_SpawnWitch(Handle timer)
     g_hWitchTimer = null;
     if (!g_cvWitchEnable.BoolValue) return Plugin_Stop;
 
-    SpawnZombieAuto("witch");
+    SpawnZombieVscript(7); // Type 7 = Witch
     if (g_cvChatEnable.BoolValue) {
         PrintToChatAll("\x04[Director] \x01Bạn có nghe thấy tiếng khóc của Witch không?");
     }
@@ -336,11 +347,10 @@ void TryExecutePanicEvent()
 {
     if (IsTankAlive())
     {
-        g_fTimeRemaining = 10.0; // Reset số giây đếm ngược
+        g_fTimeRemaining = 10.0; 
         if (g_hPanicTimer != null) KillTimer(g_hPanicTimer);
         g_hPanicTimer = CreateTimer(10.0, Timer_TriggerPanicEvent);
         
-        // Đảm bảo timer đếm ngược vẫn chạy
         if (g_hCountdownTimer == null)
             g_hCountdownTimer = CreateTimer(1.0, Timer_UpdateHint, _, TIMER_REPEAT);
             
@@ -385,7 +395,6 @@ void StartRandomPanicTimer()
     
     float fWaitTime = GetRandomFloat(g_cvMinTime.FloatValue, g_cvMaxTime.FloatValue) + g_cvDuration.FloatValue;
     
-    // Gán biến toàn cục để hệ thống đếm ngược bắt đầu trừ
     g_fTimeRemaining = fWaitTime;
     
     g_hPanicTimer = CreateTimer(fWaitTime, Timer_TriggerPanicEvent);
