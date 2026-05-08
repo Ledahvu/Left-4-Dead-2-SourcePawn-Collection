@@ -1,4 +1,3 @@
-
 // <L4D2 Super Jockey Master> - <Biến Jockey thành Super Jockey với nhiều class và kỹ năng>
 // Copyright (C) <2026> <Vũ Trường Tuyền>
 //
