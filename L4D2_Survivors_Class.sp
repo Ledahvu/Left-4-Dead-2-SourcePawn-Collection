@@ -69,7 +69,7 @@ public Plugin myinfo =
     author = "Tyn Zũ",
     description = "Thay thế đạn bằng particles hồi máu/sát thương",
     version = PLUGIN_VERSION,
-    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4D2_Survivors_Class_Weapon_Categories_Setup.sp"
+    url = "https://github.com/Ledahvu/Left-4-Dead-2-SourcePawn-Collection/blob/main/L4D2_Survivors_Class.sp"
 };
 
 public void OnPluginStart()
